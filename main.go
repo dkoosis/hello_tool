@@ -20,7 +20,7 @@ type ErrorResponse struct {
 	Details string `json:"details,omitempty"` // Optional field for more details
 }
 
-// Helper function to respond with JSON
+// Helper function to respond with JSON.
 func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
