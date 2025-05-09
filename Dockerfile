@@ -19,7 +19,7 @@ COPY *.go ./
 # Build the Go app
 # CGO_ENABLED=0 to build a statically-linked executable
 # -ldflags="-s -w" to strip debug symbols and reduce binary size
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /app/hello-service .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /app/hello-tool-base-service .
 
 # Start a new stage from scratch for a smaller image
 FROM alpine:latest

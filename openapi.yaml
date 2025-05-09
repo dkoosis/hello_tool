@@ -1,0 +1,62 @@
+openapi: 3.0.3
+info:
+  title: Hello World Tool API
+  description: |
+    A simple API that returns a greeting.
+    Intended to be used as a tool by a Google Vertex AI Agent.
+  version: '1.0.0'
+  x-google-vertex-ai-tool-name: HelloWorldTool
+  x-google-vertex-ai-tool-description: "A simple tool that greets the user. Takes a name as input and returns a personalized greeting. Use this when the user asks for a greeting or wants to say hello to someone."
+
+servers:
+- url: https://hello-tool-base-620554838572.us-central1.run.app # Updated URL
+  description: Production Cloud Run URL
+
+paths:
+  /hello:
+    get:
+      summary: Get a greeting
+      description: Returns a personalized greeting message.
+      operationId: getGreeting
+      parameters:
+      - name: name
+        in: query
+        required: true # We'll aim to enforce this in the Go code
+        description: The name of the person to greet.
+        schema:
+          type: string
+          example: "World"
+      responses:
+        '200':
+          description: A successful greeting
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Hello, World from your Go Cloud Run tool!"
+        '400':
+          # This response will be used if 'name' is missing and required:true
+          description: Bad Request - Missing 'name' parameter
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    # Consider making this more structured, e.g., an object with code and message
+                    type: string
+                    example: "Missing 'name' query parameter"
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    # Same here, consider a structured error object
+                    type: string
+                    example: "Error creating response"
