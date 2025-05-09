@@ -112,7 +112,7 @@ deploy: build # Ensures local build works, though Cloud Build performs its own b
 	@gcloud builds submit . \
 		--config=cloudbuild.yaml \
 		--project=$(PROJECT_ID) \
-		--substitutions=_SERVICE_NAME=$(SERVICE_NAME),_REGION=$(REGION),_ARTIFACT_REGISTRY_REPO=$(ARTIFACT_REGISTRY_REPO) && \
+		--substitutions="_SERVICE_NAME=$(SERVICE_NAME),_REGION=$(REGION),_ARTIFACT_REGISTRY_REPO=$(ARTIFACT_REGISTRY_REPO)" && \
 	    printf "  $(ICON_OK) $(GREEN)Cloud Build deployment triggered successfully.$(NC)\n" || \
 	    (printf "  $(ICON_FAIL) $(RED)Cloud Build deployment trigger failed.$(NC)\n" && exit 1)
 	@printf "  $(ICON_INFO) Monitor build logs at: https://console.cloud.google.com/cloud-build/builds?project=$(PROJECT_ID)\n"
