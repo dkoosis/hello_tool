@@ -1,67 +1,68 @@
-steps:
-# Build the container image
-- name: 'gcr.io/cloud-builders/docker'
-  args:
-  - 'build'
-  - '-t'
-  # Corrected: Ensure no extra spaces in the image tag string
-  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_SERVICE_NAME}:latest'
-  - '.'
-  id: 'Build Docker Image'
+    steps:
+    # Build the container image
+    - name: 'gcr.io/cloud-builders/docker'
+      args:
+      - 'build'
+      - '-t'
+      # Corrected: Ensure no extra spaces in the image tag string
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_SERVICE_NAME}:latest'
+      - '.'
+      id: 'Build Docker Image'
 
-# Push the container image to Artifact Registry
-- name: 'gcr.io/cloud-builders/docker'
-  # Corrected: Ensure no extra spaces in the image tag string
-  args: [ 'push', '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_SERVICE_NAME}:latest' ]
-  id: 'Push to Artifact Registry'
+    # Push the container image to Artifact Registry
+    - name: 'gcr.io/cloud-builders/docker'
+      # Corrected: Ensure no extra spaces in the image tag string
+      args: [ 'push', '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_SERVICE_NAME}:latest' ]
+      id: 'Push to Artifact Registry'
 
-# Deploy container image to Cloud Run
-- name: 'gcr.io/google.com/cloudsdktool/google-cloud-cli:latest'
-  entrypoint: gcloud
-  args:
-  - 'run'
-  - 'deploy'
-  - '${_SERVICE_NAME}' # This is the Cloud Run service name
-  - '--image'
-  # Corrected: Ensure no extra spaces in the image tag string
-  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_SERVICE_NAME}:latest'
-  - '--region'
-  - '${_REGION}'
-  - '--platform'
-  - 'managed'
-  - '--ingress=all'
-  - '--allow-unauthenticated' # For easy testing; for production, use IAM.
-  - '--project=$PROJECT_ID'
-  id: 'Deploy to Cloud Run'
+    # Deploy container image to Cloud Run
+    - name: 'gcr.io/google.com/cloudsdktool/google-cloud-cli:latest'
+      entrypoint: gcloud
+      args:
+      - 'run'
+      - 'deploy'
+      - '${_SERVICE_NAME}' # This is the Cloud Run service name
+      - '--image'
+      # Corrected: Ensure no extra spaces in the image tag string
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_SERVICE_NAME}:latest'
+      - '--region'
+      - '${_REGION}'
+      - '--platform'
+      - 'managed'
+      - '--ingress=all'
+      - '--allow-unauthenticated' # For easy testing; for production, use IAM.
+      - '--project=$PROJECT_ID'
+      id: 'Deploy to Cloud Run'
 
-# (Optional) Tag the image with the commit SHA for versioning
-- name: 'gcr.io/google.com/cloudsdktool/google-cloud-cli:latest'
-  entrypoint: gcloud
-  args:
-  - 'artifacts'
-  - 'docker'
-  - 'tags'
-  - 'add'
-  # Corrected: Ensure no extra spaces in the image tag strings
-  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_SERVICE_NAME}:latest'
-  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_SERVICE_NAME}:${SHORT_SHA}'
-  id: 'Tag Image'
+    # (Optional) Tag the image with the commit SHA for versioning
+    - name: 'gcr.io/google.com/cloudsdktool/google-cloud-cli:latest'
+      entrypoint: gcloud
+      args:
+      - 'artifacts'
+      - 'docker'
+      - 'tags'
+      - 'add'
+      # Corrected: Ensure no extra spaces in the image tag strings
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_SERVICE_NAME}:latest'
+      - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_SERVICE_NAME}:${SHORT_SHA}'
+      id: 'Tag Image'
 
-# Store images in Artifact Registry
-images:
-# Corrected: Ensure no extra spaces in the image tag string
-- '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_SERVICE_NAME}:latest'
-# You might also want to list the SHA-tagged image if you intend for Cloud Build to explicitly manage it as an artifact
-# - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_SERVICE_NAME}:${SHORT_SHA}'
+    # Store images in Artifact Registry
+    images:
+    # Corrected: Ensure no extra spaces in the image tag string
+    - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_SERVICE_NAME}:latest'
+    # You might also want to list the SHA-tagged image if you intend for Cloud Build to explicitly manage it as an artifact
+    # - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_SERVICE_NAME}:${SHORT_SHA}'
 
 
-substitutions:
-  # _SERVICE_NAME will be passed from the Makefile (e.g., hello-tool-base)
-  # _REGION will be passed from the Makefile (e.g., us-central1)
-  # _ARTIFACT_REGISTRY_REPO will be passed from the Makefile (e.g., my-go-apps)
-  _SERVICE_NAME: 'hello-tool-base' # Default if not overridden, but Makefile will override
-  _REGION: 'us-central1'
-  _ARTIFACT_REGISTRY_REPO: 'my-go-apps'
+    substitutions:
+      # _SERVICE_NAME will be passed from the Makefile (e.g., hello-tool-base)
+      # _REGION will be passed from the Makefile (e.g., us-central1)
+      # _ARTIFACT_REGISTRY_REPO will be passed from the Makefile (e.g., my-go-apps)
+      _SERVICE_NAME: 'hello-tool-base' # Default if not overridden, but Makefile will override
+      _REGION: 'us-central1'
+      _ARTIFACT_REGISTRY_REPO: 'my-go-apps'
 
-options:
-  logging: CLOUD_LOGGING_ONLY
+    options:
+      logging: CLOUD_LOGGING_ONLY
+    
