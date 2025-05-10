@@ -4,17 +4,15 @@ steps:
   args:
   - 'build'
   - '-t'
-  # Hardcoded most of the path, only _SERVICE_NAME is from substitution for this test.
-  # Replace YOUR_PROJECT_ID with archie-bot-250509
-  # Replace YOUR_REGION with us-central1
-  # Replace YOUR_ARTIFACT_REGISTRY_REPO with my-go-apps
-  - 'us-central1-docker.pkg.dev/archie-bot-250509/my-go-apps/${_SERVICE_NAME}:latest'
+  # Reverted to standard $PROJECT_ID for the built-in substitution
+  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_SERVICE_NAME}:latest'
   - '.'
   id: 'Build Docker Image'
 
 # Push the container image to Artifact Registry
 - name: 'gcr.io/cloud-builders/docker'
-  args: [ 'push', 'us-central1-docker.pkg.dev/archie-bot-250509/my-go-apps/${_SERVICE_NAME}:latest' ]
+  # Reverted to standard $PROJECT_ID
+  args: [ 'push', '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_SERVICE_NAME}:latest' ]
   id: 'Push to Artifact Registry'
 
 # Deploy container image to Cloud Run
@@ -25,14 +23,15 @@ steps:
   - 'deploy'
   - '${_SERVICE_NAME}' # This is the Cloud Run service name
   - '--image'
-  - 'us-central1-docker.pkg.dev/archie-bot-250509/my-go-apps/${_SERVICE_NAME}:latest'
+  # Reverted to standard $PROJECT_ID
+  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_SERVICE_NAME}:latest'
   - '--region'
-  - '${_REGION}' # _REGION is still used here, which is fine.
+  - '${_REGION}'
   - '--platform'
   - 'managed'
   - '--ingress=all'
   - '--allow-unauthenticated'
-  # $PROJECT_ID is fine here as it's a direct gcloud arg.
+  # $PROJECT_ID is the standard way to reference the project for this gcloud argument
   - '--project=$PROJECT_ID'
   id: 'Deploy to Cloud Run'
 
@@ -44,20 +43,23 @@ steps:
   - 'docker'
   - 'tags'
   - 'add'
-  - 'us-central1-docker.pkg.dev/archie-bot-250509/my-go-apps/${_SERVICE_NAME}:latest'
-  - 'us-central1-docker.pkg.dev/archie-bot-250509/my-go-apps/${_SERVICE_NAME}:${SHORT_SHA}'
+  # Reverted to standard $PROJECT_ID
+  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_SERVICE_NAME}:latest'
+  # SHORT_SHA is a built-in, $SHORT_SHA or ${_SHORT_SHA} might also work, but let's keep it simple.
+  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_SERVICE_NAME}:${SHORT_SHA}'
   id: 'Tag Image'
-
 # Store images in Artifact Registry
 images:
-- 'us-central1-docker.pkg.dev/archie-bot-250509/my-go-apps/${_SERVICE_NAME}:latest'
+# Reverted to standard $PROJECT_ID
+- '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_SERVICE_NAME}:latest'
 
 substitutions:
-  # _SERVICE_NAME, _REGION, _ARTIFACT_REGISTRY_REPO are passed from the Makefile.
-  # For this test, only _SERVICE_NAME and _REGION are actively used by the YAML in critical spots.
+  # These will be provided by the Makefile's 'gcloud builds submit ... --substitutions' flag
+  # Cloud Build also automatically provides PROJECT_ID, COMMIT_SHA, SHORT_SHA etc.
+  # No need to list PROJECT_ID here as it's a built-in variable.
   _SERVICE_NAME: 'hello-tool-base' # Default if not overridden by Makefile
   _REGION: 'us-central1' # Default if not overridden by Makefile
-  _ARTIFACT_REGISTRY_REPO: 'my-go-apps' # Default, not used in image strings for this test
+  _ARTIFACT_REGISTRY_REPO: 'my-go-apps' # Default if not overridden by Makefile
 
 options:
   logging: CLOUD_LOGGING_ONLY

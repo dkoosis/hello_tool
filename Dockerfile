@@ -1,13 +1,17 @@
 # Stage 1: Build the application
 FROM golang:1.24-alpine AS builder
 
+# Install make and other build essentials (like git for versioning if your Makefile uses it)
+# Alpine's package manager is apk
+RUN apk add --no-cache make git
+
 WORKDIR /app
 
 # Copy go.mod and go.sum first to leverage Docker cache for dependencies
 COPY go.mod ./
 COPY go.sum ./
-# Ensure dependencies are downloaded. The Makefile's 'deps' target also does this.
-# Running 'go mod download' here is belt-and-suspenders, or Makefile's deps can be used.
+# Ensure dependencies are downloaded. The Makefile's 'deps' target also does this,
+# but doing it here explicitly can be good for layer caching.
 RUN go mod download
 
 # Copy the entire application source code, including the Makefile
