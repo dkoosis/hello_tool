@@ -6,6 +6,7 @@
 │       └── Dockerfile
 ├── cmd/
 │   └── hello-tool-base/
+│       ├── main_test.go
 │       └── main.go
 ├── docs/
 │   ├── adr/
@@ -61,4 +62,4 @@
 ├── openapi.yaml
 └── README.md
 
-18 directories, 44 files
+18 directories, 45 files

@@ -2,61 +2,135 @@ openapi: 3.0.3
 info:
   title: Hello World Tool API
   description: |
-    A simple API that returns a greeting.
-    Intended to be used as a tool by a Google Vertex AI Agent.
-  version: '1.0.0'
+    A simple API that returns a greeting and provides service health status.
+    Intended to be used as a tool by a Google Vertex AI Agent for greetings.
+    The health endpoint is primarily for operational monitoring.
+  version: '1.0.1' # Bump version for changes
   x-google-vertex-ai-tool-name: HelloWorldTool
-  x-google-vertex-ai-tool-description: "A simple tool that greets the user. Takes a name as input and returns a personalized greeting. Use this when the user asks for a greeting or wants to say hello to someone."
+  x-google-vertex-ai-tool-description: "A simple tool that greets the user. Takes a name as input and returns a personalized greeting. Use this when the user asks for a greeting or wants to say hello to someone. It can also report its health status."
 
 servers:
-- url: https://hello-tool-base-620554838572.us-central1.run.app # Updated URL
+# You'll want to update this URL if/when your service URL changes
+- url: https://hello-tool-base-your-project-id.your-region.run.app # Placeholder - Update with your actual URL
   description: Production Cloud Run URL
 
 paths:
   /hello:
     get:
-      summary: Get a greeting
-      description: Returns a personalized greeting message.
+      summary: Get a personalized greeting
+      description: Returns a personalized greeting message based on the provided name.
       operationId: getGreeting
       parameters:
       - name: name
         in: query
-        required: true # We'll aim to enforce this in the Go code
-        description: The name of the person to greet.
+        required: true
+        description: The name of the person or entity to greet. This name will be included in the greeting message.
         schema:
           type: string
-          example: "World"
+          minLength: 1
+          maxLength: 100
+          example: "Alice"
       responses:
         '200':
-          description: A successful greeting
+          description: A successful and personalized greeting.
           content:
             application/json:
               schema:
                 type: object
+                required:
+                - message
                 properties:
                   message:
                     type: string
-                    example: "Hello, World from your Go Cloud Run tool!"
+                    description: The personalized greeting message.
+                    example: "Hello, Alice, from your Go Cloud Run service!"
         '400':
-          # This response will be used if 'name' is missing and required:true
-          description: Bad Request - Missing 'name' parameter
+          description: Bad Request - Typically due to a missing or invalid 'name' query parameter.
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  error:
-                    # Consider making this more structured, e.g., an object with code and message
-                    type: string
-                    example: "Missing 'name' query parameter"
+                $ref: '#/components/schemas/ErrorResponse' # Reference a common ErrorResponse schema
         '500':
-          description: Internal Server Error
+          description: Internal Server Error - An unexpected error occurred on the server.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse' # Reference a common ErrorResponse schema
+
+  /health:
+    get:
+      summary: Service Health Check
+      description: Returns the current operational status and build information of the service. This endpoint is primarily for monitoring and operational purposes.
+      operationId: getHealth
+      responses:
+        '200':
+          description: Service is healthy and operating correctly.
           content:
             application/json:
               schema:
                 type: object
+                required:
+                - status
+                - version
+                - commit
+                - buildDate
                 properties:
-                  error:
-                    # Same here, consider a structured error object
+                  status:
                     type: string
-                    example: "Error creating response"
+                    description: Current operational status of the service.
+                    example: "OK"
+                  version:
+                    type: string
+                    description: The build version of the service.
+                    example: "v1.0.1-alpha"
+                  commit:
+                    type: string
+                    description: The Git commit SHA of the build.
+                    example: "abcdef1"
+                  buildDate:
+                    type: string
+                    format: date-time # Indicate it's a timestamp
+                    description: The date and time when the service was built.
+                    example: "2023-10-27T10:00:00Z"
+        '503':
+          # Example for a more complex health check, if implemented later
+          description: Service Unavailable - The service is not healthy or a dependency is down.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - status
+                properties:
+                  status:
+                    type: string
+                    example: "UNHEALTHY"
+                  message:
+                    type: string
+                    description: A message indicating the reason for the unhealthy status.
+                    example: "A dependent service is unavailable."
+
+components:
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          # Matches your current ClientErrorResponse struct's 'Error' field
+          type: string
+          description: A user-facing error message.
+        details:
+          # Matches your current ClientErrorResponse struct's 'Details' field
+          type: string
+          description: Optional additional details about the error.
+          nullable: true
+        code:
+          # Matches your apperrors.MapAppErrorToJSONRPC 'code' field
+          type: integer
+          format: int32
+          description: A service-specific error code (can align with JSON-RPC codes).
+          nullable: true # If not always present
+      example:
+        error: "Invalid Request Parameter"
+        details: "The 'name' query parameter is required and must be between 1 and 100 characters."
+        code: -32602

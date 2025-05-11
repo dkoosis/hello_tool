@@ -2,17 +2,15 @@
 package main
 
 import (
-	"context" // Added for graceful shutdown
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
-	"os/signal" // Added for signal handling
-	"syscall"   // Added for signal handling
+	"os/signal"
+	"syscall"
 
-	// Added for server timeouts
 	"github.com/cockroachdb/errors"
-	// Ensure these import paths are correct for your project structure
 	"github.com/dkoosis/hello-tool-base/internal/apperrors"
 	"github.com/dkoosis/hello-tool-base/internal/buildinfo"
 	"github.com/dkoosis/hello-tool-base/internal/config"
@@ -30,8 +28,8 @@ type GreetingResponse struct {
 
 // ClientErrorResponse defines the structure for a JSON error message to the client.
 type ClientErrorResponse struct {
-	Error   string `json:"error"`             // User-facing error message
-	Details string `json:"details,omitempty"` // Optional user-facing details
+	Error   string `json:"error"`
+	Details string `json:"details,omitempty"`
 }
 
 // Helper function to respond with JSON.
@@ -63,7 +61,7 @@ func helloHandler(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		internalErr := apperrors.NewInvalidParamsError(
 			"helloHandler: missing 'name' query parameter",
-			nil, // No underlying cause
+			nil,
 			map[string]interface{}{
 				"parameter_name": "name",
 				"query_path":     r.URL.String(),
@@ -104,7 +102,11 @@ func rootHandler(w http.ResponseWriter, r *http.Request) {
 
 	writeAndLog("Hello World Root! This is the base Go service. Try /hello?name=YourName\n")
 	writeAndLog("---\n")
-	writeAndLog("Service: %s\n", os.Getenv("SERVICE_NAME")) // Using SERVICE_NAME from env for consistency
+	serviceName := cfg.Server.Name // Use configured server name
+	if serviceName == "" {
+		serviceName = "hello-tool-base" // Fallback if not in config for some reason
+	}
+	writeAndLog("Service: %s\n", serviceName)
 	writeAndLog("Version: %s\n", buildinfo.Version)
 	writeAndLog("Commit:  %s\n", buildinfo.CommitHash)
 	writeAndLog("Built:   %s\n", buildinfo.BuildDate)
@@ -112,30 +114,46 @@ func rootHandler(w http.ResponseWriter, r *http.Request) {
 	reqLogger.Info("Successfully processed / request")
 }
 
+// healthHandler provides a health check endpoint.
+func healthHandler(w http.ResponseWriter, r *http.Request) {
+	// For frequent health checks, detailed logging per request might be too verbose.
+	// Consider logging only on errors or if status is not OK.
+	// log.Debug("Received health check request", "path", r.URL.Path)
+
+	healthStatus := struct {
+		Status    string `json:"status"`
+		Version   string `json:"version"`
+		Commit    string `json:"commit"`
+		BuildDate string `json:"buildDate"`
+	}{
+		Status:    "OK",
+		Version:   buildinfo.Version,
+		Commit:    buildinfo.CommitHash,
+		BuildDate: buildinfo.BuildDate,
+	}
+	respondWithJSON(w, http.StatusOK, healthStatus)
+}
+
+// Declare cfg at the package level or pass it around. For simplicity here, package level.
+// However, for better testability and explicit dependency management, passing cfg would be better.
+// For this iteration, let's make it accessible to rootHandler.
+var cfg *config.Config
+
 func main() {
-	// Setup logger first. The level might come from config later.
-	// For now, hardcoding to debug for development.
 	logging.SetupDefaultLogger("debug")
 	log = logging.GetLogger("hello-tool-base-main")
 
-	// Load configuration
-	// A common pattern is to allow config path via flag or env var.
-	// For this template, we'll assume "config.yaml" in the current dir,
-	// or rely on defaults + env vars if it's not found.
 	cfgPath := os.Getenv("CONFIG_PATH")
 	if cfgPath == "" {
-		cfgPath = "config.yaml" // Default config path
+		cfgPath = "config.yaml"
 	}
 
-	cfg, err := config.LoadFromFile(cfgPath)
+	var err error // Declare err here to be used for cfg loading
+	cfg, err = config.LoadFromFile(cfgPath)
 	if err != nil {
 		log.Error("Failed to load configuration. Shutting down.", "path", cfgPath, "error", fmt.Sprintf("%+v", err))
-		os.Exit(1) // Exit if config loading fails
+		os.Exit(1)
 	}
-
-	// Re-setup logger if log level is in config (optional, depends on your config structure)
-	// Example: if cfg.Logging.Level != "" { logging.SetupDefaultLogger(cfg.Logging.Level) }
-	// log = logging.GetLogger("hello-tool-base-main") // Re-get logger in case level changed
 
 	log.Info("Service starting...",
 		"name", cfg.Server.Name,
@@ -149,14 +167,11 @@ func main() {
 		"gracefulTimeout", cfg.Server.GracefulTimeout,
 	)
 
-	// Setup HTTP request multiplexer
 	mux := http.NewServeMux()
 	mux.HandleFunc("/hello", helloHandler)
-	mux.HandleFunc("/", rootHandler)
-	// Placeholder for health handler (from Suggestion #2)
-	// mux.HandleFunc("/health", healthHandler)
+	mux.HandleFunc("/health", healthHandler) // Register health handler
+	mux.HandleFunc("/", rootHandler)         // Keep root handler last as a catch-all for "/"
 
-	// Configure the HTTP server
 	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Server.Port),
 		Handler:      mux,
@@ -165,36 +180,25 @@ func main() {
 		IdleTimeout:  cfg.Server.IdleTimeout,
 	}
 
-	// Start the server in a goroutine so that it doesn't block.
 	go func() {
 		log.Info("Server listening", "address", srv.Addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Error("Server failed to start or encountered an unexpected error. Shutting down.", "error", fmt.Sprintf("%+v", err))
-			// Consider if a more specific apperror is needed here or if os.Exit is appropriate.
-			// For catastrophic startup failure, os.Exit(1) is common.
 			os.Exit(1)
 		}
 	}()
 
-	// Wait for interrupt signal to gracefully shutdown the server
 	quit := make(chan os.Signal, 1)
-	// Listen for syscall.SIGINT (Ctrl+C) and syscall.SIGTERM (sent by Docker, Kubernetes, Cloud Run)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
-	// Block until we receive our signal.
 	receivedSignal := <-quit
 	log.Info("Received signal, initiating shutdown...", "signal", receivedSignal.String())
 
-	// Create a context with a timeout for the graceful shutdown.
-	// This is the maximum time we allow for existing requests to finish.
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.Server.GracefulTimeout)
-	defer cancel() // Ensure cancel is called to release resources associated with the context
+	defer cancel()
 
-	// Attempt to gracefully shut down the server.
-	// Shutdown() will stop accepting new connections and wait for active connections to finish.
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Error("Server shutdown failed (requests may have been interrupted).", "error", fmt.Sprintf("%+v", err))
-		// os.Exit(1) // Or handle more gracefully, depending on requirements
 	} else {
 		log.Info("Server exited gracefully.")
 	}

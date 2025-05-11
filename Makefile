@@ -3,7 +3,7 @@
 
 # Specify phony targets (targets not associated with files)
 .PHONY: all tree build clean deps fmt lint golangci-lint test test-debug \
-        install-tools check-gomod check-line-length check deploy help
+	    install-tools check-gomod check-line-length check deploy help
 
 # --- Configuration ---
 # Colors for output formatting
@@ -47,9 +47,9 @@ COMMIT_HASH  := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown"
 BUILD_DATE   := $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 # LDFLAGS for injecting build information into the internal/buildinfo package
 LDFLAGS      := -ldflags "-s -w \
-                -X $(MODULE_PATH)/internal/buildinfo.Version=$(VERSION) \
-                -X $(MODULE_PATH)/internal/buildinfo.CommitHash=$(COMMIT_HASH) \
-                -X $(MODULE_PATH)/internal/buildinfo.BuildDate=$(BUILD_DATE)"
+	            -X $(MODULE_PATH)/internal/buildinfo.Version=$(VERSION) \
+	            -X $(MODULE_PATH)/internal/buildinfo.CommitHash=$(COMMIT_HASH) \
+	            -X $(MODULE_PATH)/internal/buildinfo.BuildDate=$(BUILD_DATE)"
 
 # Tool Versions (for install-tools target)
 GOLANGCILINT_VERSION := latest # Or a specific version e.g., v1.58.0
@@ -249,20 +249,21 @@ deploy: all
 	    exit 1; \
 	fi
 	@printf "  $(ICON_INFO) Project: $(PROJECT_ID)\n"
-	@# Determine the path to cloudbuild.yaml, preferring the one in build/cloudbuild/
+	@# Determine the path to cloudbuild.yaml and trigger Cloud Build in the same shell command block
 	@CLOUDBUILD_CONFIG_PATH="./cloudbuild.yaml"; \
 	if [ -f "build/cloudbuild/cloudbuild.yaml" ]; then \
 	    CLOUDBUILD_CONFIG_PATH="./build/cloudbuild/cloudbuild.yaml"; \
+	elif [ ! -f "./cloudbuild.yaml" ]; then \
+	    printf "  $(ICON_FAIL) $(RED)Error: Neither 'build/cloudbuild/cloudbuild.yaml' nor './cloudbuild.yaml' found.$(NC)\n"; \
+	    exit 1; \
 	fi; \
-	printf "  $(ICON_INFO) Using Cloud Build config: $$CLOUDBUILD_CONFIG_PATH\n";
-	@# Trigger Cloud Build
-	@gcloud builds submit . \
-	    --config=$$CLOUDBUILD_CONFIG_PATH \
+	printf "  $(ICON_INFO) Using Cloud Build config: '%s'\n" "$$CLOUDBUILD_CONFIG_PATH"; \
+	gcloud builds submit . \
+	    --config="$$CLOUDBUILD_CONFIG_PATH" \
 	    --project=$(PROJECT_ID) && \
 	    printf "  $(ICON_OK) $(GREEN)Cloud Build triggered successfully.$(NC)\n" || \
-	    (printf "  $(ICON_FAIL) $(RED)Cloud Build trigger failed.$(NC)\n" && exit 1)
+	    (printf "  $(ICON_FAIL) $(RED)Cloud Build trigger failed.$(NC)\n" && exit 1);
 	@printf "  $(ICON_INFO) Monitor build logs at: https://console.cloud.google.com/cloud-build/builds?project=$(PROJECT_ID)\n"
-
 # --- Help ---
 # Displays this help message.
 help:

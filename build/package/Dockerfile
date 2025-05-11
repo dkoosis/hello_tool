@@ -1,40 +1,44 @@
-# Stage 1: Build the application
+# ---- Builder Stage ----
 FROM golang:1.24-alpine AS builder
 
-# Install make and other build essentials (like git for versioning if your Makefile uses it)
-# Alpine's package manager is apk
+# Install build tools used by 'make build' if any are needed beyond Go
+# The logs indicate 'make' and 'git' were installed.
 RUN apk add --no-cache make git
 
 WORKDIR /app
 
-# Copy go.mod and go.sum first to leverage Docker cache for dependencies
-COPY go.mod ./
-COPY go.sum ./
-# Ensure dependencies are downloaded. The Makefile's 'deps' target also does this,
-# but doing it here explicitly can be good for layer caching.
+# Copy Go modules and download dependencies
+COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy the entire application source code, including the Makefile
+# Copy the rest of the application source code
 COPY . .
 
-# Build the application using the Makefile.
-# This will create an executable named 'app' (or BINARY_NAME from Makefile) in the /app directory.
+# Build the application using the Makefile's build target.
+# Your Makefile's 'build' (or 'build-linux') target produces the binary '$(BINARY_NAME)',
+# which is 'hello-tool-base'. This command should place it in WORKDIR (i.e., /app/hello-tool-base).
 RUN make build
 
-# Stage 2: Create the final, minimal image
-FROM alpine:latest
+# ---- Final Stage ----
+# Use a specific tag for distroless, for example, debian12.
+# ADR-009 mentioned 'static-nonroot'.
+FROM gcr.io/distroless/static-debian12 AS final
+# Note: We will address the CA certificates for external HTTPS calls (loose end) later.
+# If static-debian12 doesn't include them, we might switch to base-debian12 or copy them.
 
-# Install ca-certificates for HTTPS calls if your app makes them
-RUN apk --no-cache add ca-certificates
+WORKDIR /
 
-WORKDIR /app # Or / for an even cleaner final stage, then CMD would be "/hello-tool-base"
+# Copy the binary from the builder stage.
+# This should match the output of 'RUN make build' in the builder stage.
+COPY --from=builder /app/hello-tool-base /app_binary
 
-# Copy the compiled binary from the builder stage.
-# The Makefile's 'build' target creates './hello-tool-base' in the /app directory of the builder stage.
-COPY --from=builder /app/hello-tool-base . # Copies 'hello-tool-base' to current WORKDIR (/app)
+EXPOSE 8080
 
-# Expose the port the application listens on (Cloud Run sets this via PORT env var)
-# EXPOSE 8080 
+# Set environment variables (can be overridden at runtime)
+ENV PORT=8080
+# SERVICE_NAME will be passed by Cloud Run or Docker run command
 
-# Command to run the executable.
-CMD ["./hello-tool-base"]
+# Run as non-root user (distroless/*-nonroot images do this by default)
+# USER nonroot:nonroot # Not needed for distroless nonroot images
+
+ENTRYPOINT ["/app_binary"]
