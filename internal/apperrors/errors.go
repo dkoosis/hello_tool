@@ -293,3 +293,4 @@ func MapAppErrorToJSONRPC(err error) (code int, message string, data map[string]
 
 	return code, message, data
 }
+e
