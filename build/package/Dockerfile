@@ -20,11 +20,8 @@ COPY . .
 RUN make build
 
 # ---- Final Stage ----
-# Use a specific tag for distroless, for example, debian12.
-# ADR-009 mentioned 'static-nonroot'.
-FROM gcr.io/distroless/static-debian12 AS final
-# Note: We will address the CA certificates for external HTTPS calls (loose end) later.
-# If static-debian12 doesn't include them, we might switch to base-debian12 or copy them.
+# Switch to base-debian12 which includes CA certificates and other common libraries.
+FROM gcr.io/distroless/base-debian12 AS final
 
 WORKDIR /
 
@@ -38,7 +35,5 @@ EXPOSE 8080
 ENV PORT=8080
 # SERVICE_NAME will be passed by Cloud Run or Docker run command
 
-# Run as non-root user (distroless/*-nonroot images do this by default)
-# USER nonroot:nonroot # Not needed for distroless nonroot images
-
+# Distroless images run as non-root by default.
 ENTRYPOINT ["/app_binary"]
