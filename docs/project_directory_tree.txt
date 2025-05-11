@@ -1,0 +1,60 @@
+./
+├── build/
+│   ├── cloudbuild/
+│   │   └── cloudbuild.yaml
+│   └── package/
+│       └── Dockerfile
+├── cmd/
+│   └── hello-tool-base/
+│       └── main.go
+├── docs/
+│   ├── adr/
+│   │   ├── 001-error-handling-strategy.md
+│   │   ├── 008-test-naming-convention.md
+│   │   ├── 009-standardized-bulletproof-build-practices.md
+│   │   └── 010-best-practices-for-go-based-vertex-ai-agent-tools.md
+│   ├── prompts/
+│   │   ├── 001-Go Project Semantic Naming & Conceptual Grouping Analysis.md
+│   │   ├── 002-Go Project Findability Path Analysis Tree Test Inspired.md
+│   │   ├── 003-Go File Naming.md
+│   │   ├── 004-Go test naming.md
+│   │   ├── 005-Go documentation.md
+│   │   ├── 006-Go error message enhancement.md
+│   │   └── end-of-session.md
+│   ├── bulletproof-build-action-plan.md
+│   ├── project_directory_tree.txt
+│   ├── project-context-and-guiding-principles.md
+│   └── todo.md
+├── internal/
+│   ├── apperrors/
+│   │   └── errors.go
+│   ├── buildinfo/
+│   │   └── buildinfo.go
+│   └── logging/
+│       ├── logger.go
+│       ├── slog.go
+│       └── stub_test.go
+├── scripts/
+│   ├── check_file_length.sh*
+│   ├── check_go_bin_path.sh*
+│   ├── check_go_mod_path.sh*
+│   ├── deploy.sh*
+│   ├── graph.d2
+│   └── pkgdep.sh*
+├── to-be-considered/
+│   └── adr/
+│       ├── 002_schema_validation_strategy.md
+│       ├── 003_state_machine.md
+│       ├── 004_in_memory_transport.md
+│       ├── 005_secret_management.md
+│       ├── 006_modular_multi_service_support.md
+│       └── 007_unix_style_pipelining.md
+├── go.mod
+├── go.sum
+├── hello-tool-base*
+├── LICENSE
+├── Makefile
+├── openapi.yaml
+└── README.md
+
+16 directories, 42 files
