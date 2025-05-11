@@ -2,7 +2,10 @@ module github.com/dkoosis/hello-tool-base
 
 go 1.24.2
 
-require github.com/cockroachdb/errors v1.12.0
+require (
+	github.com/cockroachdb/errors v1.12.0
+	gopkg.in/yaml.v3 v3.0.1
+)
 
 require (
 	github.com/cockroachdb/logtags v0.0.0-20230118201751-21c54148d20b // indirect

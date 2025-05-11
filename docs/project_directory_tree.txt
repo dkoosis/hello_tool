@@ -30,10 +30,14 @@
 │   │   └── errors.go
 │   ├── buildinfo/
 │   │   └── buildinfo.go
-│   └── logging/
-│       ├── logger.go
-│       ├── slog.go
-│       └── stub_test.go
+│   ├── config/
+│   │   └── config.go
+│   ├── logging/
+│   │   ├── logger.go
+│   │   ├── slog.go
+│   │   └── stub_test.go
+│   └── metrics/
+│       └── server-metrics.go
 ├── scripts/
 │   ├── check_file_length.sh*
 │   ├── check_go_bin_path.sh*
@@ -57,4 +61,4 @@
 ├── openapi.yaml
 └── README.md
 
-16 directories, 42 files
+18 directories, 44 files
