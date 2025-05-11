@@ -4,14 +4,12 @@ steps:
   args:
   - 'build'
   - '-t'
-  # Reverted to standard $PROJECT_ID for the built-in substitution
   - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_SERVICE_NAME}:latest'
   - '.'
   id: 'Build Docker Image'
 
 # Push the container image to Artifact Registry
 - name: 'gcr.io/cloud-builders/docker'
-  # Reverted to standard $PROJECT_ID
   args: [ 'push', '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_SERVICE_NAME}:latest' ]
   id: 'Push to Artifact Registry'
 
@@ -21,9 +19,8 @@ steps:
   args:
   - 'run'
   - 'deploy'
-  - '${_SERVICE_NAME}' # This is the Cloud Run service name
+  - '${_SERVICE_NAME}'
   - '--image'
-  # Reverted to standard $PROJECT_ID
   - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_SERVICE_NAME}:latest'
   - '--region'
   - '${_REGION}'
@@ -31,35 +28,45 @@ steps:
   - 'managed'
   - '--ingress=all'
   - '--allow-unauthenticated'
-  # $PROJECT_ID is the standard way to reference the project for this gcloud argument
   - '--project=$PROJECT_ID'
   id: 'Deploy to Cloud Run'
 
+# Add a small delay before tagging, just in case of API propagation
+- name: 'alpine'
+  args: [ 'sleep', '10' ]
+  id: 'Wait Before Tagging'
+
 # (Optional) Tag the image with the commit SHA for versioning
 - name: 'gcr.io/google.com/cloudsdktool/google-cloud-cli:latest'
-  entrypoint: gcloud
+  entrypoint: 'bash'
   args:
-  - 'artifacts'
-  - 'docker'
-  - 'tags'
-  - 'add'
-  # Reverted to standard $PROJECT_ID
-  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_SERVICE_NAME}:latest'
-  # SHORT_SHA is a built-in, $SHORT_SHA or ${_SHORT_SHA} might also work, but let's keep it simple.
-  - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_SERVICE_NAME}:${SHORT_SHA}'
+  - '-c'
+  - |
+    # Use SHORT_SHA if available, otherwise use 'manual-build' as a fallback tag
+    TAG_NAME="${SHORT_SHA:-manual-build}"
+    echo "Attempting to tag image with: $${TAG_NAME}"
+    gcloud artifacts docker tags add \
+      '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_SERVICE_NAME}:latest' \
+      '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_SERVICE_NAME}:$${TAG_NAME}' \
+      --project=$PROJECT_ID || echo "Tagging failed, continuing build."
   id: 'Tag Image'
-# Store images in Artifact Registry
+  # Allow this step to fail without failing the entire build if tagging is non-critical
+  # allowFailure: true
+
+
+  # Store images in Artifact Registry
 images:
-# Reverted to standard $PROJECT_ID
 - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_SERVICE_NAME}:latest'
+# Also list the tagged image if you want it explicitly managed by Cloud Build artifacts
+# - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_SERVICE_NAME}:${SHORT_SHA:-manual-build}'
+
 
 substitutions:
-  # These will be provided by the Makefile's 'gcloud builds submit ... --substitutions' flag
-  # Cloud Build also automatically provides PROJECT_ID, COMMIT_SHA, SHORT_SHA etc.
-  # No need to list PROJECT_ID here as it's a built-in variable.
-  _SERVICE_NAME: 'hello-tool-base' # Default if not overridden by Makefile
-  _REGION: 'us-central1' # Default if not overridden by Makefile
-  _ARTIFACT_REGISTRY_REPO: 'my-go-apps' # Default if not overridden by Makefile
+  _SERVICE_NAME: 'hello-tool-base'
+  _REGION: 'us-central1'
+  _ARTIFACT_REGISTRY_REPO: 'my-go-apps'
+  # SHORT_SHA is a built-in substitution provided by Cloud Build if Git context is available.
+  # If running 'gcloud builds submit .' from a directory without .git, SHORT_SHA might be empty.
 
 options:
   logging: CLOUD_LOGGING_ONLY
