@@ -292,8 +292,40 @@ deploy: all check-vulns
 	     SERVICE_URL=$$(gcloud run services describe $(SERVICE_NAME) --platform=managed --region=$(GCP_REGION) --project=$(PROJECT_ID) --format="value(status.url)" 2>/dev/null); \
 	     if [ -n "$$SERVICE_URL" ]; then \
 	         printf "  $(ICON_OK) $(GREEN)Service URL: $$SERVICE_URL$(NC)\n"; \
+	         printf "  $(ICON_START) $(BLUE)Performing health check (Version: $(VERSION), Commit: $(COMMIT_HASH)) on $$SERVICE_URL/health...$(NC)\n"; \
+	         HEALTH_CHECK_ATTEMPTS=0; \
+	         MAX_HEALTH_CHECK_ATTEMPTS=5; \
+	         HEALTH_CHECK_DELAY=10; \
+	         HEALTH_CHECK_PASSED=false; \
+	         while [ $$HEALTH_CHECK_ATTEMPTS -lt $$MAX_HEALTH_CHECK_ATTEMPTS ]; do \
+	             printf "    $(ICON_INFO) Health check attempt #%d...\n" $$(($$HEALTH_CHECK_ATTEMPTS + 1)); \
+	             HEALTH_RESPONSE=$$(curl --fail --silent --show-error --connect-timeout 5 --max-time 10 "$$SERVICE_URL/health"); \
+	             if [ $$? -eq 0 ]; then \
+	                 if echo "$$HEALTH_RESPONSE" | grep -q '"status":"OK"' && \
+	                    echo "$$HEALTH_RESPONSE" | grep -q '"version":"$(VERSION)"' && \
+	                    echo "$$HEALTH_RESPONSE" | grep -q '"commit":"$(COMMIT_HASH)"'; then \
+	                     printf "    $(ICON_OK) $(GREEN)Health check PASSED. Status, Version, and Commit match expected values.$(NC)\n"; \
+	                     HEALTH_CHECK_PASSED=true; \
+	                     break; \
+	                 else \
+	                     printf "    $(ICON_WARN) $(YELLOW)Health check attempt #%d: Service responded OK, but content mismatch (Status, Version, or Commit).$(NC)\n" $$(($$HEALTH_CHECK_ATTEMPTS + 1)); \
+	                     printf "      Response: %s\n" "$$HEALTH_RESPONSE"; \
+	                 fi; \
+	             else \
+	                 printf "    $(ICON_WARN) $(YELLOW)Health check attempt #%d: curl command failed or non-2xx response.$(NC)\n" $$(($$HEALTH_CHECK_ATTEMPTS + 1)); \
+	             fi; \
+	             HEALTH_CHECK_ATTEMPTS=$$(($$HEALTH_CHECK_ATTEMPTS + 1)); \
+	             if [ $$HEALTH_CHECK_ATTEMPTS -lt $$MAX_HEALTH_CHECK_ATTEMPTS ]; then \
+	                 printf "    $(ICON_INFO) Retrying in $$HEALTH_CHECK_DELAY seconds...$(NC)\n"; \
+	                 sleep $$HEALTH_CHECK_DELAY; \
+	             fi; \
+	         done; \
+	         if [ "$$HEALTH_CHECK_PASSED" = "false" ]; then \
+	             printf "  $(ICON_FAIL) $(RED)Post-deployment health check FAILED after $$MAX_HEALTH_CHECK_ATTEMPTS attempts.$(NC)\n"; \
+	             exit 1; \
+	         fi; \
 	     else \
-	         printf "  $(ICON_WARN) $(YELLOW)Could not retrieve service URL. Please check the Cloud Run console.$(NC)\n"; \
+	         printf "  $(ICON_WARN) $(YELLOW)Could not retrieve service URL. Skipping health check. Please check the Cloud Run console.$(NC)\n"; \
 	     fi) || \
 	    (printf "  $(ICON_INFO) $(YELLOW)End gcloud output:------------------------------------------------$(NC)\n"; \
 	     printf "  $(ICON_FAIL) $(RED)Cloud Build submission or execution failed. Review gcloud output above and build logs for details.$(NC)\n" && exit 1);
@@ -322,5 +354,5 @@ help:
 	@printf "  %-25s %s\n" "check-vulns" "Scan for known vulnerabilities in dependencies (fails build if found)"
 	@printf "\n$(YELLOW)Other:$(NC)\n"
 	@printf "  %-25s %s\n" "tree" "Generate project directory tree view in ./docs/"
-	@printf "  %-25s %s\n" "deploy" "Run all checks (incl. vuln scan), build, then deploy & show URL"
+	@printf "  %-25s %s\n" "deploy" "Run all checks (incl. vuln scan), build, then deploy, show URL & health check"
 	@printf "  %-25s %s\n" "help" "Display this help message"
