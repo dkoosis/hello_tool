@@ -1,0 +1,18 @@
+# .yamllint
+extends: default
+
+rules:
+  # Relax line length - default is 80
+  line-length:
+    max: 120 # Or 160, or whatever makes sense for your team
+    level: warning # Make it a warning instead of an error if you prefer
+  # Disable document-start check if you don't want it
+  document-start: disable
+  # Adjust comment spacing if needed
+  comments:
+    require-starting-space: true
+    min-spaces-from-content: 1 # Default is 2
+  # Adjust indentation rules if necessary (e.g., for specific list styles)
+  # indentation:
+  #   spaces: consistent # Default is 2, can be 4 etc.
+  #   indent-sequences: whatever # Default is true

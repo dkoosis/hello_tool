@@ -5,14 +5,14 @@ info:
     A simple API that returns a greeting and provides service health status.
     Intended to be used as a tool by a Google Vertex AI Agent for greetings.
     The health endpoint is primarily for operational monitoring.
-  version: '1.0.1' # Bump version for changes
+  version: "1.0.1" # Bump version for changes
   x-google-vertex-ai-tool-name: HelloWorldTool
-  x-google-vertex-ai-tool-description: "A simple tool that greets the user. Takes a name as input and returns a personalized greeting. Use this when the user asks for a greeting or wants to say hello to someone. It can also report its health status."
+  x-google-vertex-ai-tool-description: "A tool that greets the user. Takes a name as input and returns a personalized greeting. Use this when the user asks for a greeting or wants to say hello to someone. It can also report its health status."
 
 servers:
-# You'll want to update this URL if/when your service URL changes
-- url: https://hello-tool-base-your-project-id.your-region.run.app # Placeholder - Update with your actual URL
-  description: Production Cloud Run URL
+  # You'll want to update this URL if/when your service URL changes
+  - url: https://hello-tool-base-your-project-id.your-region.run.app # Placeholder - Update with your actual URL
+    description: Production Cloud Run URL
 
 paths:
   /hello:
@@ -21,41 +21,41 @@ paths:
       description: Returns a personalized greeting message based on the provided name.
       operationId: getGreeting
       parameters:
-      - name: name
-        in: query
-        required: true
-        description: The name of the person or entity to greet. This name will be included in the greeting message.
-        schema:
-          type: string
-          minLength: 1
-          maxLength: 100
-          example: "Alice"
+        - name: name
+          in: query
+          required: true
+          description: The name of the person or entity to greet. This name will be included in the greeting message.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+            example: "Alice"
       responses:
-        '200':
+        "200":
           description: A successful and personalized greeting.
           content:
             application/json:
               schema:
                 type: object
                 required:
-                - message
+                  - message
                 properties:
                   message:
                     type: string
                     description: The personalized greeting message.
                     example: "Hello, Alice, from your Go Cloud Run service!"
-        '400':
+        "400":
           description: Bad Request - Typically due to a missing or invalid 'name' query parameter.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse' # Reference a common ErrorResponse schema
-        '500':
+                $ref: "#/components/schemas/ErrorResponse" # Reference a common ErrorResponse schema
+        "500":
           description: Internal Server Error - An unexpected error occurred on the server.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse' # Reference a common ErrorResponse schema
+                $ref: "#/components/schemas/ErrorResponse" # Reference a common ErrorResponse schema
 
   /health:
     get:
@@ -63,17 +63,17 @@ paths:
       description: Returns the current operational status and build information of the service. This endpoint is primarily for monitoring and operational purposes.
       operationId: getHealth
       responses:
-        '200':
+        "200":
           description: Service is healthy and operating correctly.
           content:
             application/json:
               schema:
                 type: object
                 required:
-                - status
-                - version
-                - commit
-                - buildDate
+                  - status
+                  - version
+                  - commit
+                  - buildDate
                 properties:
                   status:
                     type: string
@@ -92,7 +92,7 @@ paths:
                     format: date-time # Indicate it's a timestamp
                     description: The date and time when the service was built.
                     example: "2023-10-27T10:00:00Z"
-        '503':
+        "503":
           # Example for a more complex health check, if implemented later
           description: Service Unavailable - The service is not healthy or a dependency is down.
           content:
@@ -100,7 +100,7 @@ paths:
               schema:
                 type: object
                 required:
-                - status
+                  - status
                 properties:
                   status:
                     type: string
