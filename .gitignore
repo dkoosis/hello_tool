@@ -27,7 +27,9 @@ coverage.html
 
 # Build artifacts
 # Ignore the compiled binary specifically
-build/hello-tool-base
+/hello-tool-base
+# Or more generally if BINARY_NAME is always the same as SERVICE_NAME (may not work reliably)
+/$(SERVICE_NAME) 
 
 # OS-generated files
 .DS_Store

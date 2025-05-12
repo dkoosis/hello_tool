@@ -17,6 +17,9 @@ RUN go mod download
 # Copy the rest of the application source code
 COPY . .
 
+# Debug: Echo the ARGs to see what Docker has received from cloudbuild.yaml build-args
+RUN echo "DEBUG Dockerfile ARGs: BUILD_VERSION='${BUILD_VERSION}', BUILD_COMMIT='${BUILD_COMMIT}'"
+
 # Pass ARGs directly as make variables
 RUN make build VERSION_ARG="${BUILD_VERSION}" COMMIT_ARG="${BUILD_COMMIT}"
 
