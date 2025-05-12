@@ -2,12 +2,17 @@
 ├── build/
 │   ├── cloudbuild/
 │   │   └── cloudbuild.yaml
+│   ├── makefiles/
+│   │   ├── build.mk
+│   │   ├── checks.mk
+│   │   ├── colors.mk
+│   │   ├── config.mk
+│   │   ├── deploy.mk
+│   │   ├── test.mk
+│   │   └── tools.mk
 │   └── package/
 │       └── Dockerfile
 ├── cmd/
-│   └── hello-tool-base/
-│       ├── main_test.go
-│       └── main.go
 ├── docs/
 │   ├── adr/
 │   │   ├── 001-error-handling-strategy.md
@@ -21,7 +26,8 @@
 │   │   ├── 004-Go test naming.md
 │   │   ├── 005-Go documentation.md
 │   │   ├── 006-Go error message enhancement.md
-│   │   └── end-of-session.md
+│   │   ├── end-of-session.md
+│   │   └── make-refactor-prompt.md
 │   ├── bulletproof-build-action-plan.md
 │   ├── project_directory_tree.txt
 │   ├── project-context-and-guiding-principles.md
@@ -43,8 +49,6 @@
 │   ├── check_file_length.sh*
 │   ├── check_go_bin_path.sh*
 │   ├── check_go_mod_path.sh*
-│   ├── deploy.sh*
-│   ├── graph.d2
 │   └── pkgdep.sh*
 ├── to-be-considered/
 │   └── adr/
@@ -56,10 +60,10 @@
 │       └── 007_unix_style_pipelining.md
 ├── go.mod
 ├── go.sum
-├── hello-tool-base*
 ├── LICENSE
+├── m.bak
 ├── Makefile
 ├── openapi.yaml
 └── README.md
 
-18 directories, 45 files
+18 directories, 49 files
