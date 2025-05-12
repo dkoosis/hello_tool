@@ -7,7 +7,12 @@ steps:
   - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_SERVICE_NAME}:latest'
   - '-f'
   - 'build/package/Dockerfile' # Specify the path
-  - '.' # Build context 
+  # Pass Cloud Build substitutions as Docker build ARGs
+  - '--build-arg'
+  - 'BUILD_COMMIT=${SHORT_SHA:-unknown}' # Use SHORT_SHA, fallback to unknown
+  - '--build-arg'
+  - 'BUILD_VERSION=${TAG_NAME:-dev-cloudbuild}' # Use TAG_NAME, fallback to dev-cloudbuild
+  - '.' # Build context
   id: 'Build Docker Image'
 
 # Push the container image to Artifact Registry
@@ -28,47 +33,51 @@ steps:
   - '${_REGION}'
   - '--platform'
   - 'managed'
-  - '--ingress=all'
-  - '--allow-unauthenticated'
+  - '--ingress=all' # Consider changing to 'internal' or 'internal-and-cloud-load-balancing' for non-public tools
+  - '--allow-unauthenticated' # Remove for private services that require IAM authentication
   - '--project=$PROJECT_ID'
+  # Example of setting environment variables for the Cloud Run service:
+  - '--set-env-vars=SERVICE_NAME=${_SERVICE_NAME}'
+  # Example of mounting secrets (ensure the Cloud Run service account has access to these secrets):
+  # - '--set-secrets=/secrets/my-api-key=MY_API_KEY_SECRET_NAME:latest'
   id: 'Deploy to Cloud Run'
 
-# Add a small delay before tagging, just in case of API propagation
-- name: 'alpine'
-  args: [ 'sleep', '10' ]
-  id: 'Wait Before Tagging'
-
-# (Optional) Tag the image with the commit SHA for versioning
+# (Optional) Tag the image with the commit SHA for versioning - moved this from user's original as it's cleaner
 - name: 'gcr.io/google.com/cloudsdktool/google-cloud-cli:latest'
   entrypoint: 'bash'
   args:
   - '-c'
   - |
     # Use SHORT_SHA if available, otherwise use 'manual-build' as a fallback tag
-    TAG_NAME="${SHORT_SHA:-manual-build}"
-    echo "Attempting to tag image with: $${TAG_NAME}"
+    FINAL_TAG_NAME="${SHORT_SHA:-manual-build-$(date -u +%Y%m%d%H%M%S)}"
+    echo "Tagging image '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_SERVICE_NAME}:latest' with tag: $${FINAL_TAG_NAME}"
     gcloud artifacts docker tags add \
       '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_SERVICE_NAME}:latest' \
-      '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_SERVICE_NAME}:$${TAG_NAME}' \
-      --project=$PROJECT_ID || echo "Tagging failed, continuing build."
-  id: 'Tag Image'
-  # Allow this step to fail without failing the entire build if tagging is non-critical
-  # allowFailure: true
+      '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_SERVICE_NAME}:$${FINAL_TAG_NAME}' \
+      --project=$PROJECT_ID || echo "Warning: Tagging image with $${FINAL_TAG_NAME} failed, continuing build."
+  id: 'Tag Image with Commit SHA'
+  # Allow this step to fail without failing the entire build if tagging is non-critical,
+  # though for traceability, it's good if it succeeds.
+  allowFailure: true # Set to false if successful tagging is mandatory
 
-
-  # Store images in Artifact Registry
+# Store images in Artifact Registry
 images:
 - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_SERVICE_NAME}:latest'
 # Also list the tagged image if you want it explicitly managed by Cloud Build artifacts
+# This requires knowing the tag name, which can be dynamic. For simplicity, often just the :latest is listed here,
+# and the tagging step handles the additional specific tags.
 # - '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_SERVICE_NAME}:${SHORT_SHA:-manual-build}'
 
 
 substitutions:
   _SERVICE_NAME: 'hello-tool-base'
-  _REGION: 'us-central1'
-  _ARTIFACT_REGISTRY_REPO: 'my-go-apps'
-  # SHORT_SHA is a built-in substitution provided by Cloud Build if Git context is available.
-  # If running 'gcloud builds submit .' from a directory without .git, SHORT_SHA might be empty.
+  _REGION: 'us-central1' # Ensure this is your desired GCP region
+  _ARTIFACT_REGISTRY_REPO: 'my-go-apps' # Ensure this is your Artifact Registry repo name
+  # SHORT_SHA and TAG_NAME are automatically populated by Cloud Build if the trigger is connected to a source repository.
+  # For manual 'gcloud builds submit .', SHORT_SHA might be 'unknown' if not in a git repo.
+  # TAG_NAME will be empty if not building a tag.
 
 options:
   logging: CLOUD_LOGGING_ONLY
+  # Optional: You can specify a machine type for faster builds if needed
+  # machineType: 'E2_HIGHCPU_8'

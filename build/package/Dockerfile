@@ -1,8 +1,11 @@
 # ---- Builder Stage ----
 FROM golang:1.24-alpine AS builder
 
+# Accept build arguments for version and commit
+ARG BUILD_VERSION="dev"
+ARG BUILD_COMMIT="unknown"
+
 # Install build tools used by 'make build' if any are needed beyond Go
-# The logs indicate 'make' and 'git' were installed.
 RUN apk add --no-cache make git
 
 WORKDIR /app
@@ -14,13 +17,12 @@ RUN go mod download
 # Copy the rest of the application source code
 COPY . .
 
-# Build the application using the Makefile's build target.
-# Your Makefile's 'build' (or 'build-linux') target produces the binary '$(BINARY_NAME)',
-# which is 'hello-tool-base'. This command should place it in WORKDIR (i.e., /app/hello-tool-base).
-RUN make build
+# Pass ARGs as environment variables to 'make build'
+# The Makefile will then pick these up for LDFLAGS.
+RUN VERSION_ARG=${BUILD_VERSION} COMMIT_ARG=${BUILD_COMMIT} make build
 
 # ---- Final Stage ----
-# Switch to base-debian12 which includes CA certificates and other common libraries.
+# Use base-debian12 which includes CA certificates and other common libraries.
 FROM gcr.io/distroless/base-debian12 AS final
 
 WORKDIR /

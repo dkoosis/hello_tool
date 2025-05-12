@@ -3,7 +3,7 @@
 
 # Specify phony targets (targets not associated with files)
 .PHONY: all tree build clean deps fmt lint golangci-lint test test-debug \
-	    install-tools check-gomod check-line-length check deploy help
+	    install-tools check-gomod check-line-length check deploy help check-vulns
 
 # --- Configuration ---
 # Colors for output formatting
@@ -37,14 +37,17 @@ MODULE_PATH  := github.com/dkoosis/hello-tool-base
 CMD_PATH     := ./cmd/$(SERVICE_NAME)
 SCRIPT_DIR   := ./scripts
 
-# Google Cloud Platform variables (primarily for 'deploy' target)
-# Attempts to get PROJECT_ID from gcloud config.
+# Google Cloud Platform variables
 PROJECT_ID   := $(shell gcloud config get-value project 2>/dev/null)
+GCP_REGION   := us-central1 # Define GCP Region
 
-# Build-time variables for version injection using an internal/buildinfo package
-VERSION      := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-COMMIT_HASH  := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+# Build-time variables for version injection
+# Prioritize args passed from Docker build (as env vars VERSION_ARG, COMMIT_ARG), then fallback to git commands for local builds.
+VERSION      := $(or $(VERSION_ARG),$(shell git describe --tags --always --dirty --match=v* 2>/dev/null || echo "dev"))
+COMMIT_HASH  := $(or $(COMMIT_ARG),$(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown"))
+# BUILD_DATE can also be passed as an ARG if needed, for now, it's dynamic.
 BUILD_DATE   := $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
+
 # LDFLAGS for injecting build information into the internal/buildinfo package
 LDFLAGS      := -ldflags "-s -w \
 	            -X $(MODULE_PATH)/internal/buildinfo.Version=$(VERSION) \
@@ -62,9 +65,10 @@ FAIL_LINES   := 1500 # Fail if lines exceed this
 GO_FILES     := $(shell find . -name "*.go" -not -path "./vendor/*")
 
 # --- Core Targets ---
-# Default target: Runs all checks, formatting, tests, and then builds the application.
+# Default target: Runs general checks, formatting, tests, and then builds the application.
+# Vulnerability scan is separate and run explicitly by 'deploy' or 'make check-vulns'.
 all: tree check-gomod deps fmt golangci-lint check-line-length test build
-	@printf "$(GREEN)$(BOLD)✨ All checks passed and build completed successfully! ✨$(NC)\n"
+	@printf "$(GREEN)$(BOLD)✨ All general checks passed and build completed successfully! ✨$(NC)\n"
 
 # Generates a project directory tree view.
 tree:
@@ -84,6 +88,7 @@ tree:
 # Builds the application binary for Linux AMD64.
 build:
 	@printf "$(ICON_START) $(BOLD)$(BLUE)Building $(BINARY_NAME) for linux/amd64...$(NC)\n"
+	@printf "  $(ICON_INFO) Using Version: $(VERSION), Commit: $(COMMIT_HASH), BuildDate: $(BUILD_DATE)\n"
 	@CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o $(BINARY_NAME) $(CMD_PATH) && \
 	    printf "  $(ICON_OK) $(GREEN)Build successful: $(PWD)/$(BINARY_NAME)$(NC)\n" || \
 	    (printf "  $(ICON_FAIL) $(RED)Build failed$(NC)\n" && exit 1)
@@ -186,6 +191,23 @@ check-line-length:
 	    (printf "   $(ICON_WARN) $(YELLOW)Line length check reported issues (see script output above)$(NC)\n" && exit 0)
 	@printf "\n"
 
+# --- Security Checks ---
+# Scans for known vulnerabilities in dependencies. Fails build if any are found.
+check-vulns: install-tools
+	@printf "$(ICON_START) $(BOLD)$(BLUE)Scanning for vulnerabilities with govulncheck...$(NC)\n"
+	@if ! command -v govulncheck >/dev/null 2>&1; then \
+	    printf "  $(ICON_INFO) $(YELLOW)govulncheck not found. Installing...$(NC)\n"; \
+	    go install golang.org/x/vuln/cmd/govulncheck@latest && \
+	    printf "  $(ICON_OK) $(GREEN)govulncheck installed successfully.$(NC)\n" || \
+	    (printf "  $(ICON_FAIL) $(RED)Failed to install govulncheck.$(NC)\n" && exit 1); \
+	else \
+	    printf "  $(ICON_OK) $(GREEN)govulncheck is already installed.$(NC)\n"; \
+	fi
+	@govulncheck ./... && \
+	    printf "  $(ICON_OK) $(GREEN)No known vulnerabilities found.$(NC)\n" || \
+	    (printf "  $(ICON_FAIL) $(RED)$(BOLD)govulncheck found potential vulnerabilities. Deployment will be halted.$(NC)\n" && exit 1) # Fail build if vulnerabilities are found
+	@printf "\n"
+
 # --- Tooling & Setup ---
 # Installs or updates required Go development tools.
 install-tools:
@@ -228,21 +250,21 @@ check: install-tools
 	fi
 	@# Add checks for other scripts if needed, e.g., check_go_bin_path.sh
 	@if [ -x "$(SCRIPT_DIR)/check_go_bin_path.sh" ]; then \
-		printf $(LABEL_FMT) "Go Bin Path Script:"; \
-		"$(SCRIPT_DIR)/check_go_bin_path.sh" && \
-		printf "$(ICON_OK) $(GREEN)check_go_bin_path.sh passed$(NC)\n" || \
-		printf "$(ICON_WARN) $(YELLOW)check_go_bin_path.sh reported issues or failed$(NC)\n"; \
+	    printf $(LABEL_FMT) "Go Bin Path Script:"; \
+	    "$(SCRIPT_DIR)/check_go_bin_path.sh" && \
+	    printf "$(ICON_OK) $(GREEN)check_go_bin_path.sh passed$(NC)\n" || \
+	    printf "$(ICON_WARN) $(YELLOW)check_go_bin_path.sh reported issues or failed$(NC)\n"; \
 	else \
-		printf $(LABEL_FMT) "Go Bin Path Script:"; \
-		printf "$(ICON_WARN) $(YELLOW)Not found or not executable: $(SCRIPT_DIR)/check_go_bin_path.sh$(NC)\n"; \
+	    printf $(LABEL_FMT) "Go Bin Path Script:"; \
+	    printf "$(ICON_WARN) $(YELLOW)Not found or not executable: $(SCRIPT_DIR)/check_go_bin_path.sh$(NC)\n"; \
 	fi
 	@printf "  $(ICON_OK) $(GREEN)Tool and environment check complete$(NC)\n"
 	@printf "\n"
 
 # --- Deployment ---
 # Deploys the application to Google Cloud via Cloud Build.
-# Depends on 'all' to ensure all checks, tests, and build are successful first.
-deploy: all
+# Depends on 'all' (for general checks and build) AND 'check-vulns' (for security scan).
+deploy: all check-vulns
 	@printf "$(ICON_START) $(BOLD)$(BLUE)Deploying $(SERVICE_NAME) to Google Cloud...$(NC)\n"
 	@if [ -z "$(PROJECT_ID)" ]; then \
 	    printf "  $(ICON_FAIL) $(RED)Error: Google Cloud Project ID not found. Set via 'gcloud config set project YOUR_PROJECT_ID' or ensure gcloud is configured.$(NC)\n"; \
@@ -258,17 +280,31 @@ deploy: all
 	    exit 1; \
 	fi; \
 	printf "  $(ICON_INFO) Using Cloud Build config: '%s'\n" "$$CLOUDBUILD_CONFIG_PATH"; \
+	printf "  $(ICON_INFO) $(YELLOW)Submitting to Google Cloud Build and awaiting completion...$(NC)\n"; \
+	printf "  $(ICON_INFO) $(YELLOW)Begin gcloud output:----------------------------------------------$(NC)\n"; \
 	gcloud builds submit . \
 	    --config="$$CLOUDBUILD_CONFIG_PATH" \
 	    --project=$(PROJECT_ID) && \
-	    printf "  $(ICON_OK) $(GREEN)Cloud Build triggered successfully.$(NC)\n" || \
-	    (printf "  $(ICON_FAIL) $(RED)Cloud Build trigger failed.$(NC)\n" && exit 1);
-	@printf "  $(ICON_INFO) Monitor build logs at: https://console.cloud.google.com/cloud-build/builds?project=$(PROJECT_ID)\n"
+	    (printf "  $(ICON_INFO) $(YELLOW)End gcloud output:------------------------------------------------$(NC)\n"; \
+	     printf "  $(ICON_OK) $(GREEN)Cloud Build completed successfully.$(NC)\n"; \
+	     printf "  $(ICON_INFO) Monitor detailed build logs at the URL provided in the gcloud output or here: https://console.cloud.google.com/cloud-build/builds?project=$(PROJECT_ID)\n"; \
+	     printf "  $(ICON_START) $(BLUE)Fetching deployed service URL...$(NC)\n"; \
+	     SERVICE_URL=$$(gcloud run services describe $(SERVICE_NAME) --platform=managed --region=$(GCP_REGION) --project=$(PROJECT_ID) --format="value(status.url)" 2>/dev/null); \
+	     if [ -n "$$SERVICE_URL" ]; then \
+	         printf "  $(ICON_OK) $(GREEN)Service URL: $$SERVICE_URL$(NC)\n"; \
+	     else \
+	         printf "  $(ICON_WARN) $(YELLOW)Could not retrieve service URL. Please check the Cloud Run console.$(NC)\n"; \
+	     fi) || \
+	    (printf "  $(ICON_INFO) $(YELLOW)End gcloud output:------------------------------------------------$(NC)\n"; \
+	     printf "  $(ICON_FAIL) $(RED)Cloud Build submission or execution failed. Review gcloud output above and build logs for details.$(NC)\n" && exit 1);
+	@printf "\n"
+
+
 # --- Help ---
 # Displays this help message.
 help:
 	@printf "$(BLUE)$(BOLD)$(SERVICE_NAME) Make Targets:$(NC)\n"
-	@printf "  %-25s %s\n" "all" "Run checks, format, tests, and build (default)"
+	@printf "  %-25s %s\n" "all" "Run general checks, format, tests, and build (default, no vuln scan)"
 	@printf "  %-25s %s\n" "build" "Build the application binary ($(BINARY_NAME)) for Linux"
 	@printf "  %-25s %s\n" "clean" "Clean build artifacts and caches"
 	@printf "  %-25s %s\n" "deps" "Tidy and download Go module dependencies"
@@ -282,8 +318,9 @@ help:
 	@printf "  %-25s %s\n" "test" "Run tests using gotestsum"
 	@printf "  %-25s %s\n" "test-debug" "Run tests with verbose output (go test -v)"
 	@printf "  %-25s %s\n" "check-line-length" "Check Go file line count (W:$(WARN_LINES), F:$(FAIL_LINES))"
+	@printf "\n$(YELLOW)Security:$(NC)\n"
+	@printf "  %-25s %s\n" "check-vulns" "Scan for known vulnerabilities in dependencies (fails build if found)"
 	@printf "\n$(YELLOW)Other:$(NC)\n"
 	@printf "  %-25s %s\n" "tree" "Generate project directory tree view in ./docs/"
-	@printf "  %-25s %s\n" "deploy" "Run all checks, build, then deploy to Google Cloud"
+	@printf "  %-25s %s\n" "deploy" "Run all checks (incl. vuln scan), build, then deploy & show URL"
 	@printf "  %-25s %s\n" "help" "Display this help message"
-
