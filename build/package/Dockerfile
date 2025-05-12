@@ -17,9 +17,8 @@ RUN go mod download
 # Copy the rest of the application source code
 COPY . .
 
-# Pass ARGs as environment variables to 'make build'
-# The Makefile will then pick these up for LDFLAGS.
-RUN VERSION_ARG=${BUILD_VERSION} COMMIT_ARG=${BUILD_COMMIT} make build
+# Pass ARGs directly as make variables
+RUN make build VERSION_ARG="${BUILD_VERSION}" COMMIT_ARG="${BUILD_COMMIT}"
 
 # ---- Final Stage ----
 # Use base-debian12 which includes CA certificates and other common libraries.
