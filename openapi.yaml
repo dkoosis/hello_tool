@@ -1,3 +1,4 @@
+---
 openapi: 3.0.3
 info:
   title: Hello World Tool API
@@ -5,13 +6,13 @@ info:
     A simple API that returns a greeting and provides service health status.
     Intended to be used as a tool by a Google Vertex AI Agent for greetings.
     The health endpoint is primarily for operational monitoring.
-  version: "1.0.1" # Bump version for changes
+  version: "1.0.1"  # Bump version for changes
   x-google-vertex-ai-tool-name: HelloWorldTool
   x-google-vertex-ai-tool-description: "A tool that greets the user. Takes a name as input and returns a personalized greeting. Use this when the user asks for a greeting or wants to say hello to someone. It can also report its health status."
 
 servers:
   # You'll want to update this URL if/when your service URL changes
-  - url: https://hello-tool-base-your-project-id.your-region.run.app # Placeholder - Update with your actual URL
+  - url: https://hello-tool-base-your-project-id.your-region.run.app  # Placeholder - Update with your actual URL
     description: Production Cloud Run URL
 
 paths:
@@ -49,13 +50,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse" # Reference a common ErrorResponse schema
+                $ref: "  #/components/schemas/ErrorResponse"  # Reference a common ErrorResponse schema
         "500":
           description: Internal Server Error - An unexpected error occurred on the server.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse" # Reference a common ErrorResponse schema
+                $ref: "  #/components/schemas/ErrorResponse"  # Reference a common ErrorResponse schema
 
   /health:
     get:
@@ -89,7 +90,7 @@ paths:
                     example: "abcdef1"
                   buildDate:
                     type: string
-                    format: date-time # Indicate it's a timestamp
+                    format: date-time  # Indicate it's a timestamp
                     description: The date and time when the service was built.
                     example: "2023-10-27T10:00:00Z"
         "503":
@@ -129,7 +130,7 @@ components:
           type: integer
           format: int32
           description: A service-specific error code (can align with JSON-RPC codes).
-          nullable: true # If not always present
+          nullable: true  # If not always present
       example:
         error: "Invalid Request Parameter"
         details: "The 'name' query parameter is required and must be between 1 and 100 characters."

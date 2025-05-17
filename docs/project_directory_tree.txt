@@ -2,14 +2,6 @@
 ├── build/
 │   ├── cloudbuild/
 │   │   └── cloudbuild.yaml
-│   ├── makefiles/
-│   │   ├── build.mk
-│   │   ├── checks.mk
-│   │   ├── colors.mk
-│   │   ├── config.mk
-│   │   ├── deploy.mk
-│   │   ├── test.mk
-│   │   └── tools.mk
 │   └── package/
 │       └── Dockerfile
 ├── cmd/
@@ -46,9 +38,12 @@
 │   └── metrics/
 │       └── server-metrics.go
 ├── scripts/
+│   ├── check_and_report_tool.sh*
 │   ├── check_file_length.sh*
 │   ├── check_go_bin_path.sh*
 │   ├── check_go_mod_path.sh*
+│   ├── fix_formatting.sh*
+│   ├── fo*
 │   └── pkgdep.sh*
 ├── to-be-considered/
 │   └── adr/
@@ -61,9 +56,8 @@
 ├── go.mod
 ├── go.sum
 ├── LICENSE
-├── m.bak
 ├── Makefile
 ├── openapi.yaml
 └── README.md
 
-18 directories, 49 files
+17 directories, 44 files

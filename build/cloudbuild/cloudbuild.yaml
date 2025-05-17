@@ -1,18 +1,19 @@
+---
 # ./build/cloudbuild/cloudbuild.yaml
 substitutions:
   _SERVICE_NAME: "hello-tool-base"
-  _REGION: "us-central1" # Ensure this is your desired GCP region
-  _ARTIFACT_REGISTRY_REPO: "my-go-apps" # Ensure this is your Artifact Registry repo name
-  _MODULE_PATH: "github.com/dkoosis/hello-tool-base" # Must match your go.mod and Makefile
+  _REGION: "us-central1"  # Ensure this is your desired GCP region
+  _ARTIFACT_REGISTRY_REPO: "my-go-apps"  # Ensure this is your Artifact Registry repo name
+  _MODULE_PATH: "github.com/dkoosis/hello-tool-base"  # Must match your go.mod and Makefile
   # These will be populated by the Makefile's `gcloud builds submit --substitutions`
-  _MAKEFILE_VERSION: "dev" # Default value if not provided by Makefile
-  _MAKEFILE_COMMIT: "unknown" # Default value if not provided by Makefile
+  _MAKEFILE_VERSION: "dev"  # Default value if not provided by Makefile
+  _MAKEFILE_COMMIT: "unknown"  # Default value if not provided by Makefile
   # TAG_NAME and SHORT_SHA are Cloud Build built-in substitutions.
 
 steps:
   # Step 0: Diagnostic Echo (Optional, but helps confirm substitutions)
   # This step explicitly uses the placeholders to ensure Cloud Build's parser sees them.
-  - name: "ubuntu" # Use a simple image with echo
+  - name: "ubuntu"  # Use a simple image with echo
     entrypoint: "bash"
     args:
       - -c
@@ -36,20 +37,20 @@ steps:
       - "-t"
       - "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_SERVICE_NAME}:latest"
       - "-f"
-      - "build/package/Dockerfile" # Specify the path
+      - "build/package/Dockerfile"  # Specify the path
       # Pass Cloud Build substitutions as Docker build ARGs
       - "--build-arg"
       # Priority: 1. _MAKEFILE_VERSION (from make deploy), 2. TAG_NAME (Cloud Build built-in), 3. Dockerfile ARG default
-      - "BUILD_VERSION=${_MAKEFILE_VERSION:-${TAG_NAME:-dev-cloudbuild}}" # Using _MAKEFILE_VERSION
+      - "BUILD_VERSION=${_MAKEFILE_VERSION:-${TAG_NAME:-dev-cloudbuild}}"  # Using _MAKEFILE_VERSION
       - "--build-arg"
       # Priority: 1. _MAKEFILE_COMMIT (from make deploy), 2. SHORT_SHA (Cloud Build built-in), 3. Dockerfile ARG default
-      - "BUILD_COMMIT=${_MAKEFILE_COMMIT:-${SHORT_SHA:-unknown}}" # Using _MAKEFILE_COMMIT
+      - "BUILD_COMMIT=${_MAKEFILE_COMMIT:-${SHORT_SHA:-unknown}}"  # Using _MAKEFILE_COMMIT
       - "--build-arg"
       # Explicitly pass _MODULE_PATH as a build-arg
-      - "MODULE_PATH=${_MODULE_PATH}" # Using _MODULE_PATH
-      - "." # Build context
+      - "MODULE_PATH=${_MODULE_PATH}"  # Using _MODULE_PATH
+      - "."  # Build context
     id: "Build Docker Image"
-    waitFor: ["Diagnostic Echo"] # Wait for diagnostics if you keep that step
+    waitFor: ["Diagnostic Echo"]  # Wait for diagnostics if you keep that step
 
   # Step 2: Push the container image to Artifact Registry
   - name: "gcr.io/cloud-builders/docker"
@@ -71,7 +72,7 @@ steps:
       - "--platform"
       - "managed"
       - "--ingress=all"
-      - "--allow-unauthenticated" # Remove for private services
+      - "--allow-unauthenticated"  # Remove for private services
       - "--project=$PROJECT_ID"
       - "--set-env-vars=SERVICE_NAME=${_SERVICE_NAME}"
     # Example of using other substitutions defined above for env vars if needed by your app:
@@ -104,11 +105,11 @@ steps:
           --project=$PROJECT_ID || echo "Warning: Tagging image with $${FINAL_TAG_NAME} failed, continuing build."
     id: "Tag Image with Specific Commit SHA"
     allowFailure: true
-    waitFor: ["Deploy to Cloud Run"] # Wait for deploy before tagging
+    waitFor: ["Deploy to Cloud Run"]  # Wait for deploy before tagging
 
 images:
   - "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REGISTRY_REPO}/${_SERVICE_NAME}:latest"
 
 options:
   logging: CLOUD_LOGGING_ONLY
-  # machineType: 'E2_HIGHCPU_8' # Optional
+  # machineType: 'E2_HIGHCPU_8'  # Optional

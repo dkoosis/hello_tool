@@ -1,0 +1,72 @@
+version: "3"
+
+vars:
+  SERVICE_NAME: hello-tool-base
+  BINARY_NAME: "{{.SERVICE_NAME}}"
+  MODULE_PATH: github.com/dkoosis/hello-tool-base
+  CMD_PATH: ./cmd/{{.SERVICE_NAME}}
+  SCRIPT_DIR: ./scripts
+
+  VERSION:
+    sh: git describe --tags --always --dirty --match=v* 2>/dev/null || echo "dev"
+  COMMIT_HASH:
+    sh: git rev-parse --short HEAD 2>/dev/null || echo "unknown"
+  BUILD_DATE:
+    sh: date -u '+%Y-%m-%dT%H:%M:%SZ'
+
+  LDFLAGS: "-s -w -X {{.MODULE_PATH}}/internal/buildinfo.Version={{.VERSION}} -X {{.MODULE_PATH}}/internal/buildinfo.CommitHash={{.COMMIT_HASH}} -X {{.MODULE_PATH}}/internal/buildinfo.BuildDate={{.BUILD_DATE}}"
+
+  GOLANGCILINT_VERSION: latest
+  GOTESTSUM_VERSION: latest
+
+env:
+  CGO_ENABLED: 0
+
+output: prefixed
+
+tasks:
+  default:
+    cmds:
+      - task: all
+
+  all:
+    deps:
+      - go-deps
+      - test
+      - build
+    cmds:
+      - echo "All tasks completed"
+
+  build:
+    cmds:
+      - GOOS=linux GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -o {{.BINARY_NAME}} {{.CMD_PATH}}
+    sources:
+      - "{{.CMD_PATH}}/**/*.go"
+      - "./internal/**/*.go"
+    generates:
+      - "{{.BINARY_NAME}}"
+
+  clean:
+    cmds:
+      - rm -f {{.BINARY_NAME}} coverage.out
+      - go clean -cache -testcache
+
+  go-deps:
+    cmds:
+      - go mod tidy -v
+      - go mod download
+
+  test:
+    cmds:
+      - go test -race -coverprofile=coverage.out ./...
+
+  install-tools:
+    cmds:
+      - |
+        if ! command -v golangci-lint >/dev/null 2>&1; then
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@{{.GOLANGCILINT_VERSION}}
+        fi
+      - |
+        if ! command -v gotestsum >/dev/null 2>&1; then
+          go install gotest.tools/gotestsum@{{.GOTESTSUM_VERSION}}
+        fi
