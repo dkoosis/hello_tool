@@ -5,6 +5,7 @@ vars:
   BINARY_NAME: "{{.SERVICE_NAME}}"
   MODULE_PATH: github.com/dkoosis/hello-tool-base
   CMD_PATH: ./cmd/{{.SERVICE_NAME}}
+  SCRIPT_DIR: ./scripts
 
   VERSION:
     sh: git describe --tags --always --dirty --match=v* 2>/dev/null || echo "dev"
@@ -17,6 +18,8 @@ vars:
 
   GOLANGCILINT_VERSION: latest
   GOTESTSUM_VERSION: latest
+  WARN_LINES: 350
+  FAIL_LINES: 1500
 
 env:
   CGO_ENABLED: 0
@@ -30,12 +33,14 @@ tasks:
 
   all:
     cmds:
+      - task: check-gomod
       - task: modt
       - task: fmt
       - task: lint
+      - task: check-line-length
       - task: test
       - task: build
-      - echo "All tasks completed"
+      - echo "All tasks completed successfully"
 
   build:
     cmds:
@@ -56,6 +61,13 @@ tasks:
       - task: install-tools
       - gotestsum --format testdox -- -race -coverprofile=coverage.out -covermode=atomic ./...
 
+  test-debug:
+    env:
+      LOG_LEVEL: debug
+    cmds:
+      - task: install-tools
+      - go test -v -race -count=1 -coverprofile=coverage.out ./...
+
   fmt:
     cmds:
       - task: install-tools
@@ -66,6 +78,22 @@ tasks:
     cmds:
       - task: install-tools
       - golangci-lint run ./...
+
+  check-gomod:
+    cmds:
+      - "{{.SCRIPT_DIR}}/check_go_mod_path.sh {{.MODULE_PATH}}"
+
+  check-line-length:
+    cmds:
+      - '{{.SCRIPT_DIR}}/check_file_length.sh {{.WARN_LINES}} {{.FAIL_LINES}} $(find . -name "*.go" -not -path "./vendor/*" -not -path "./.git/*") || true'
+
+  check-vulns:
+    cmds:
+      - |
+        if ! command -v govulncheck >/dev/null 2>&1; then
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+        fi
+        govulncheck ./...
 
   install-tools:
     cmds:
