@@ -21,6 +21,13 @@ vars:
   WARN_LINES: 350
   FAIL_LINES: 1500
 
+  PROJECT_ID:
+    sh: gcloud config get-value project 2>/dev/null || echo ""
+  GCP_REGION: us-central1
+  ARTIFACT_REGISTRY_REPO: my-go-apps
+  CLOUDBUILD_CONFIG_PATH: ./build/cloudbuild/cloudbuild.yaml
+  GCLOUD_BUILD_SUBSTITUTIONS: "_SERVICE_NAME={{.SERVICE_NAME}},_REGION={{.GCP_REGION}},_ARTIFACT_REGISTRY_REPO={{.ARTIFACT_REGISTRY_REPO}},_MODULE_PATH={{.MODULE_PATH}},_MAKEFILE_VERSION={{.VERSION}},_MAKEFILE_COMMIT={{.COMMIT_HASH}}"
+
 env:
   CGO_ENABLED: 0
 
@@ -106,4 +113,78 @@ tasks:
         if ! command -v gotestsum >/dev/null 2>&1; then
           echo "Installing gotestsum@{{.GOTESTSUM_VERSION}}..."
           go install gotest.tools/gotestsum@{{.GOTESTSUM_VERSION}}
+        fi
+
+  _check-gcp-project:
+    interactive: true
+    cmds:
+      - |
+        if [ -z "{{.PROJECT_ID}}" ]; then
+          echo "ERROR: Google Cloud Project ID not found or not configured." >&2
+          echo "Please set via 'gcloud config set project YOUR_PROJECT_ID'" >&2
+          exit 1
+        fi
+
+  deploy:
+    cmds:
+      - task: all
+      - task: check-vulns
+      - task: _check-gcp-project
+      - |
+        CONFIG_FILE_TO_USE=""
+        if [ -f "{{.CLOUDBUILD_CONFIG_PATH}}" ]; then
+            CONFIG_FILE_TO_USE="{{.CLOUDBUILD_CONFIG_PATH}}"
+        elif [ -f "./cloudbuild.yaml" ]; then
+            CONFIG_FILE_TO_USE="./cloudbuild.yaml"
+        else
+            echo "ERROR: Cloud Build config file not found" >&2
+            exit 1
+        fi
+        gcloud builds submit . \
+          --config="$CONFIG_FILE_TO_USE" \
+          --project="{{.PROJECT_ID}}" \
+          --substitutions="{{.GCLOUD_BUILD_SUBSTITUTIONS}}"
+      - task: health-check
+
+  health-check:
+    vars:
+      URL: "{{.HEALTH_CHECK_URL}}"
+      E_VERSION: "{{.EXPECTED_VERSION | default .VERSION}}"
+      E_COMMIT: "{{.EXPECTED_COMMIT | default .COMMIT_HASH}}"
+    cmds:
+      - |
+        set -e
+        if [ -z "{{.URL}}" ]; then
+          SERVICE_URL_HC=$(gcloud run services describe {{.SERVICE_NAME}} --platform=managed --region={{.GCP_REGION}} --project={{.PROJECT_ID}} --format="value(status.url)" 2>/dev/null)
+          if [ -z "$SERVICE_URL_HC" ]; then
+            echo "ERROR: Could not retrieve service URL for health check" >&2
+            exit 1
+          fi
+          URL_TO_CHECK="$SERVICE_URL_HC/health"
+        else
+          URL_TO_CHECK="{{.URL}}"
+        fi
+
+        SUCCESS=false
+        for i in $(seq 1 5); do
+          RESPONSE=$(curl -f -s -S -L --connect-timeout 5 --max-time 10 -w "\nHTTP_CODE:%{http_code}" "$URL_TO_CHECK" || echo "ERROR\nHTTP_CODE:0")
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1 | cut -d: -f2)
+
+          if [ "$HTTP_CODE" -eq 200 ]; then
+            if command -v jq >/dev/null 2>&1; then
+                RESPONSE_VERSION=$(echo "$BODY" | jq -r .version 2>/dev/null)
+                RESPONSE_COMMIT=$(echo "$BODY" | jq -r .commit 2>/dev/null)
+                if [ "$RESPONSE_VERSION" = "{{.E_VERSION}}" ] && [ "$RESPONSE_COMMIT" = "{{.E_COMMIT}}" ]; then
+                    SUCCESS=true; break
+                fi
+            else
+                SUCCESS=true; break
+            fi
+          fi
+          if [ $i -lt 5 ]; then sleep 10; fi
+        done
+        if [ "$SUCCESS" = "false" ]; then
+            echo "ERROR: Health check FAILED after 5 attempts" >&2
+            exit 1
         fi
