@@ -1,3 +1,20 @@
+# Task 3.43.3 YAML Parsing Known Issues:
+#
+# 1. DO NOT use "deps" as a task name (conflicts with Task's internal keyword)
+#    - Use "modt" or another name for dependency management tasks
+#
+# 2. DO NOT use the --checksum flag (not supported in this version)
+#    - Example that fails: echo "$(task --checksum go.mod)"
+#
+# 3. AVOID complex shell substitutions in commands
+#    - Example that fails: echo "Build successful: $(pwd)/{{.BINARY_NAME}}"
+#    - Instead use: echo "Build successful: {{.BINARY_NAME}}"
+#
+# 4. LIMIT nesting in multi-line shell scripts
+#    - Deeply nested conditional blocks can cause parsing issues
+#
+# 5. BE CAREFUL with status fields containing shell commands
+#    - The status field under tasks can cause parsing errors with complex commands
 version: "3"
 
 vars:
@@ -36,20 +53,27 @@ output: prefixed
 tasks:
   default:
     cmds:
-      - task: all
+      - task all
 
   all:
     cmds:
-      - task: check-gomod
-      - task: modt
-      - task: fmt
-      - task: lint
-      - task: check-line-length
-      - task: test
-      - task: build
+      - task check-gomod
+      - task tree
+      - task modt
+      - task fmt
+      - task lint
+      - task lint-yaml
+      - task check-line-length
+      - task test
+      - task build
       - echo "All tasks completed successfully"
 
   build:
+    sources:
+      - "{{.CMD_PATH}}/**/*.go"
+      - "./internal/**/*.go"
+    generates:
+      - "{{.BINARY_NAME}}"
     cmds:
       - GOOS=linux GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -o {{.BINARY_NAME}} {{.CMD_PATH}}
 
@@ -59,38 +83,88 @@ tasks:
       - go clean -cache -testcache
 
   modt:
+    sources:
+      - go.mod
+      - go.sum
     cmds:
       - go mod tidy -v
       - go mod download
 
-  test:
+  tree:
     cmds:
-      - task: install-tools
+      - mkdir -p ./docs
+      - |
+        if ! command -v tree > /dev/null; then
+          exit 0
+        else
+          tree -F -I 'vendor|.git|.idea*|*.DS_Store|{{.BINARY_NAME}}|coverage.out' --dirsfirst > ./docs/project_directory_tree.txt || exit 1
+        fi
+    generates:
+      - ./docs/project_directory_tree.txt
+
+  test:
+    sources:
+      - "{{.CMD_PATH}}/**/*.go"
+      - "./internal/**/*.go"
+    generates:
+      - coverage.out
+    cmds:
+      - task install-tools
       - gotestsum --format testdox -- -race -coverprofile=coverage.out -covermode=atomic ./...
 
   test-debug:
     env:
       LOG_LEVEL: debug
     cmds:
-      - task: install-tools
       - go test -v -race -count=1 -coverprofile=coverage.out ./...
 
   fmt:
+    sources:
+      - "{{.CMD_PATH}}/**/*.go"
+      - "./internal/**/*.go"
     cmds:
-      - task: install-tools
+      - task install-tools
       - golangci-lint fmt ./...
       - go mod tidy -v
 
   lint:
+    sources:
+      - "{{.CMD_PATH}}/**/*.go"
+      - "./internal/**/*.go"
     cmds:
-      - task: install-tools
+      - task install-tools
       - golangci-lint run ./...
 
+  lint-yaml:
+    cmds:
+      - |
+        if ! command -v yamllint >/dev/null 2>&1; then
+          if command -v pip >/dev/null 2>&1 || command -v pip3 >/dev/null 2>&1; then
+            PIP_CMD=$(command -v pip || command -v pip3)
+            $PIP_CMD install --user yamllint || exit 1
+          else
+            exit 0
+          fi
+        fi
+        YAML_FILES=$(find . -type f \( -name "*.yaml" -o -name "*.yml" \) -not -path "./vendor/*" -not -path "./.git/*")
+        if [ -n "$YAML_FILES" ]; then
+          yamllint $YAML_FILES
+          EXIT_CODE=$?
+          if [ $EXIT_CODE -gt 1 ]; then
+            exit $EXIT_CODE
+          fi
+        fi
+
   check-gomod:
+    sources:
+      - go.mod
     cmds:
       - "{{.SCRIPT_DIR}}/check_go_mod_path.sh {{.MODULE_PATH}}"
 
   check-line-length:
+    sources:
+      - "{{.CMD_PATH}}/**/*.go"
+      - "./internal/**/*.go"
     cmds:
       - '{{.SCRIPT_DIR}}/check_file_length.sh {{.WARN_LINES}} {{.FAIL_LINES}} $(find . -name "*.go" -not -path "./vendor/*" -not -path "./.git/*") || true'
 
@@ -120,16 +194,15 @@ tasks:
     cmds:
       - |
         if [ -z "{{.PROJECT_ID}}" ]; then
-          echo "ERROR: Google Cloud Project ID not found or not configured." >&2
-          echo "Please set via 'gcloud config set project YOUR_PROJECT_ID'" >&2
+          echo "ERROR: Google Cloud Project ID not found." >&2
           exit 1
         fi
 
   deploy:
     cmds:
-      - task: all
-      - task: check-vulns
-      - task: _check-gcp-project
+      - task all
+      - task check-vulns
+      - task _check-gcp-project
       - |
         CONFIG_FILE_TO_USE=""
         if [ -f "{{.CLOUDBUILD_CONFIG_PATH}}" ]; then
@@ -144,7 +217,7 @@ tasks:
           --config="$CONFIG_FILE_TO_USE" \
           --project="{{.PROJECT_ID}}" \
           --substitutions="{{.GCLOUD_BUILD_SUBSTITUTIONS}}"
-      - task: health-check
+      - task health-check
 
   health-check:
     vars:
@@ -157,7 +230,7 @@ tasks:
         if [ -z "{{.URL}}" ]; then
           SERVICE_URL_HC=$(gcloud run services describe {{.SERVICE_NAME}} --platform=managed --region={{.GCP_REGION}} --project={{.PROJECT_ID}} --format="value(status.url)" 2>/dev/null)
           if [ -z "$SERVICE_URL_HC" ]; then
-            echo "ERROR: Could not retrieve service URL for health check" >&2
+            echo "ERROR: Could not retrieve service URL" >&2
             exit 1
           fi
           URL_TO_CHECK="$SERVICE_URL_HC/health"
@@ -185,6 +258,6 @@ tasks:
           if [ $i -lt 5 ]; then sleep 10; fi
         done
         if [ "$SUCCESS" = "false" ]; then
-            echo "ERROR: Health check FAILED after 5 attempts" >&2
+            echo "ERROR: Health check FAILED" >&2
             exit 1
         fi

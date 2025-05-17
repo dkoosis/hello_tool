@@ -43,7 +43,6 @@
 │   ├── check_go_bin_path.sh*
 │   ├── check_go_mod_path.sh*
 │   ├── fix_formatting.sh*
-│   ├── fo*
 │   └── pkgdep.sh*
 ├── to-be-considered/
 │   └── adr/
@@ -54,10 +53,13 @@
 │       ├── 006_modular_multi_service_support.md
 │       └── 007_unix_style_pipelining.md
 ├── go.mod
+├── go.mod.checksum
 ├── go.sum
+├── go.sum.checksum
 ├── LICENSE
 ├── Makefile
 ├── openapi.yaml
-└── README.md
+├── README.md
+└── Taskfile.yml
 
-17 directories, 44 files
+17 directories, 46 files
