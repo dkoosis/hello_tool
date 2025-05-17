@@ -5,7 +5,6 @@ vars:
   BINARY_NAME: "{{.SERVICE_NAME}}"
   MODULE_PATH: github.com/dkoosis/hello-tool-base
   CMD_PATH: ./cmd/{{.SERVICE_NAME}}
-  SCRIPT_DIR: ./scripts
 
   VERSION:
     sh: git describe --tags --always --dirty --match=v* 2>/dev/null || echo "dev"
@@ -30,43 +29,53 @@ tasks:
       - task: all
 
   all:
-    deps:
-      - go-deps
-      - test
-      - build
     cmds:
+      - task: modt
+      - task: fmt
+      - task: lint
+      - task: test
+      - task: build
       - echo "All tasks completed"
 
   build:
     cmds:
       - GOOS=linux GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -o {{.BINARY_NAME}} {{.CMD_PATH}}
-    sources:
-      - "{{.CMD_PATH}}/**/*.go"
-      - "./internal/**/*.go"
-    generates:
-      - "{{.BINARY_NAME}}"
 
   clean:
     cmds:
       - rm -f {{.BINARY_NAME}} coverage.out
       - go clean -cache -testcache
 
-  go-deps:
+  modt:
     cmds:
       - go mod tidy -v
       - go mod download
 
   test:
     cmds:
-      - go test -race -coverprofile=coverage.out ./...
+      - task: install-tools
+      - gotestsum --format testdox -- -race -coverprofile=coverage.out -covermode=atomic ./...
+
+  fmt:
+    cmds:
+      - task: install-tools
+      - golangci-lint fmt ./...
+      - go mod tidy -v
+
+  lint:
+    cmds:
+      - task: install-tools
+      - golangci-lint run ./...
 
   install-tools:
     cmds:
       - |
         if ! command -v golangci-lint >/dev/null 2>&1; then
+          echo "Installing golangci-lint@{{.GOLANGCILINT_VERSION}}..."
           go install github.com/golangci/golangci-lint/cmd/golangci-lint@{{.GOLANGCILINT_VERSION}}
         fi
       - |
         if ! command -v gotestsum >/dev/null 2>&1; then
+          echo "Installing gotestsum@{{.GOTESTSUM_VERSION}}..."
           go install gotest.tools/gotestsum@{{.GOTESTSUM_VERSION}}
         fi
