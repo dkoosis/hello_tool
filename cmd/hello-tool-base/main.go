@@ -1,4 +1,6 @@
-// File: cmd/hello-tool-base/main.go
+// ErrorEnhanced: 2025-05-17
+// Package main executes the hello-tool-base service.
+// file: cmd/hello-tool-base/main.go
 package main
 
 import (
@@ -16,14 +18,15 @@ import (
 	"github.com/dkoosis/hello-tool-base/internal/buildinfo"
 	"github.com/dkoosis/hello-tool-base/internal/config"
 	"github.com/dkoosis/hello-tool-base/internal/logging"
-	"github.com/dkoosis/hello-tool-base/internal/middleware" // New import
+	"github.com/dkoosis/hello-tool-base/internal/middleware"
 )
 
 var (
-	// Global logger, primarily for startup and shutdown messages.
+	// appLog is the global logger, primarily for startup and shutdown messages.
 	// Request-specific logging will use the logger from context.
 	appLog logging.Logger
-	cfg    *config.Config // Moved cfg to package level for access in main
+	// cfg holds the application configuration, moved to package level for access in main.
+	cfg *config.Config
 )
 
 // GreetingResponse defines the structure for a successful greeting.
@@ -37,8 +40,8 @@ type ClientErrorResponse struct {
 	Details string `json:"details,omitempty"`
 }
 
-// Helper function to respond with JSON.
-// Now takes a logger for consistent error logging.
+// respondWithJSON is a helper function to respond with JSON.
+// It now takes a logger for consistent error logging.
 func respondWithJSON(l logging.Logger, w http.ResponseWriter, statusCode int, payload interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
@@ -49,8 +52,8 @@ func respondWithJSON(l logging.Logger, w http.ResponseWriter, statusCode int, pa
 	}
 }
 
-// Helper function to respond with a JSON error to the client.
-// Now takes a logger.
+// respondWithError is a helper function to respond with a JSON error to the client.
+// It now takes a logger.
 func respondWithError(l logging.Logger, w http.ResponseWriter, statusCode int, clientMessage string, clientDetails string, internalErr error) {
 	// Use the passed-in logger which should have trace_id
 	l.Error("Server-side error occurred",
@@ -62,6 +65,9 @@ func respondWithError(l logging.Logger, w http.ResponseWriter, statusCode int, c
 	respondWithJSON(l, w, statusCode, ClientErrorResponse{Error: clientMessage, Details: clientDetails})
 }
 
+// helloHandler handles requests to the /hello endpoint.
+// It expects a 'name' query parameter and returns a personalized greeting.
+// If the 'name' parameter is missing, it returns a 400 Bad Request.
 func helloHandler(w http.ResponseWriter, r *http.Request) {
 	// Retrieve the request-scoped logger from context
 	reqLogger := middleware.GetLoggerFromContext(r.Context()).WithField("handler", "helloHandler")
@@ -71,7 +77,7 @@ func helloHandler(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		internalErr := apperrors.NewInvalidParamsError(
 			"helloHandler: missing 'name' query parameter",
-			nil,
+			nil, // No underlying cause for this specific validation error
 			map[string]interface{}{
 				"parameter_name": "name",
 				"query_path":     r.URL.String(),
@@ -91,6 +97,9 @@ func helloHandler(w http.ResponseWriter, r *http.Request) {
 	reqLogger.Info("Successfully processed /hello request", "name", name)
 }
 
+// rootHandler handles requests to the / (root) endpoint.
+// It returns general service information, including build details and a welcome message.
+// For any other path, it returns a 404 Not Found.
 func rootHandler(w http.ResponseWriter, r *http.Request) {
 	reqLogger := middleware.GetLoggerFromContext(r.Context()).WithField("handler", "rootHandler")
 
@@ -106,6 +115,7 @@ func rootHandler(w http.ResponseWriter, r *http.Request) {
 
 	writeAndLog := func(format string, args ...interface{}) {
 		if _, err := fmt.Fprintf(w, format, args...); err != nil {
+			// Using cockroachdb/errors.Wrapf to add context and preserve stack trace if any from fmt.Fprintf
 			wrappedErr := errors.Wrapf(err, "rootHandler: failed to write response for path %s", r.URL.Path)
 			// Use reqLogger here as it has trace_id and handler context
 			reqLogger.Error("Failed to write to response stream", "error", fmt.Sprintf("%+v", wrappedErr))
@@ -123,10 +133,17 @@ func rootHandler(w http.ResponseWriter, r *http.Request) {
 	writeAndLog("Commit:  %s\n", buildinfo.CommitHash)
 	writeAndLog("Built:   %s\n", buildinfo.BuildDate)
 
+	// Fetch and write the TraceID
+	traceID := middleware.GetTraceIDFromContext(r.Context())
+	if traceID != "" {
+		writeAndLog("TraceID: %s\n", traceID)
+	}
+
 	reqLogger.Info("Successfully processed / request")
 }
 
-// healthHandler provides a health check endpoint.
+// healthHandler provides a health check endpoint for the service.
+// It returns the service's current operational status, version, commit, and build date.
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	reqLogger := middleware.GetLoggerFromContext(r.Context()).WithField("handler", "healthHandler")
 	// For frequent health checks, detailed logging per request might be too verbose.
@@ -149,6 +166,9 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	// reqLogger.Debug("Successfully processed /health request")
 }
 
+// main is the entry point for the application.
+// It initializes configuration, logging, sets up HTTP routes, and starts the server.
+// It also handles graceful shutdown on SIGINT or SIGTERM signals.
 func main() {
 	// Setup default logger for application-level logs (startup, shutdown)
 	logging.SetupDefaultLogger("debug") // Or your desired default level
@@ -162,6 +182,8 @@ func main() {
 	var err error
 	cfg, err = config.LoadFromFile(cfgPath)
 	if err != nil {
+		// err from LoadFromFile should already be well-wrapped by cockroachdb/errors.
+		// Logging with %+v will include the stack trace.
 		appLog.Error("Failed to load configuration. Shutting down.", "path", cfgPath, "error", fmt.Sprintf("%+v", err))
 		os.Exit(1)
 	}
@@ -198,10 +220,17 @@ func main() {
 
 	go func() {
 		appLog.Info("Server listening", "address", srv.Addr)
+		// errors.Is correctly checks for http.ErrServerClosed
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			// Error from ListenAndServe might not be wrapped by cockroachdb yet, so wrap it for consistent stack trace.
+			// However, standard library errors like this are often clear enough.
+			// For consistency with prompt, let's ensure it's potentially wrapped if we want to add our own context/type.
+			// But since we just log it, fmt.Sprintf("%+v", err) is often sufficient if it's already rich.
+			// Let's keep it as is, as %+v on stdlib errors can also be informative.
+			// If we were to pass it to apperrors, then we'd wrap:
+			// wrappedErr := errors.Wrap(err, "main: server ListenAndServe failed")
 			appLog.Error("Server failed to start or encountered an error. Shutting down.", "error", fmt.Sprintf("%+v", err))
-			// Consider a more graceful way to signal main to exit if this goroutine fails critically
-			os.Exit(1) // Or use a channel to signal shutdown
+			os.Exit(1)
 		}
 	}()
 
@@ -215,7 +244,9 @@ func main() {
 	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), cfg.Server.GracefulTimeout)
 	defer cancelShutdown()
 
+	// Error from srv.Shutdown might also be a standard library error.
 	if err := srv.Shutdown(shutdownCtx); err != nil {
+		// wrappedErr := errors.Wrap(err, "main: server Shutdown failed")
 		appLog.Error("Server shutdown failed", "error", fmt.Sprintf("%+v", err))
 	} else {
 		appLog.Info("Server exited gracefully.")

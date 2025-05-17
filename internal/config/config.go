@@ -1,3 +1,4 @@
+// ErrorEnhanced: 2025-05-17
 // Package config handles loading, parsing, and validating application configuration.
 // It defines the structure for configuration settings, provides default values,
 // loads settings from files (e.g., YAML), and applies overrides from environment variables.
@@ -48,13 +49,16 @@ func DefaultConfig() *Config {
 }
 
 // LoadFromFile loads configuration from the specified YAML file path.
+// It expands '~' to the user's home directory, reads the file, unmarshals YAML,
+// and applies environment variable overrides.
 func LoadFromFile(path string) (*Config, error) {
 	logger := logging.GetLogger("config_load")
 
 	if len(path) > 0 && path[0] == '~' {
 		homeDir, err := os.UserHomeDir()
 		if err != nil {
-			return nil, errors.Wrap(err, "failed to get home directory to expand path")
+			// Added function context to the error message
+			return nil, errors.Wrap(err, "LoadFromFile: failed to get home directory to expand path")
 		}
 		path = filepath.Join(homeDir, path[1:])
 		logger.Debug("Expanded config path from '~'", "originalPath", path, "expandedPath", path)
@@ -67,14 +71,16 @@ func LoadFromFile(path string) (*Config, error) {
 			config := DefaultConfig()
 			return config, nil
 		}
-		return nil, errors.Wrapf(err, "failed to read config file: %s", path)
+		// Added function context to the error message
+		return nil, errors.Wrapf(err, "LoadFromFile: failed to read config file: %s", path)
 	}
 	logger.Info("Successfully read configuration file.", "path", path)
 
 	config := DefaultConfig()
 
 	if err := yaml.Unmarshal(data, config); err != nil {
-		return nil, errors.Wrapf(err, "failed to parse config file YAML: %s", path)
+		// Added function context to the error message
+		return nil, errors.Wrapf(err, "LoadFromFile: failed to parse config file YAML: %s", path)
 	}
 	logger.Info("Successfully unmarshalled YAML from configuration file.", "path", path)
 
@@ -83,6 +89,7 @@ func LoadFromFile(path string) (*Config, error) {
 }
 
 // applyEnvironmentOverrides applies configuration overrides from environment variables.
+// It logs any overrides applied or any issues encountered during parsing of env vars.
 func applyEnvironmentOverrides(config *Config, logger logging.Logger) {
 	// Server Port
 	if portStr := os.Getenv("SERVER_PORT"); portStr != "" {

@@ -1,9 +1,10 @@
+// ErrorEnhanced: 2025-05-17
 // Package apperrors defines domain-specific error types and codes for the application.
 // These errors provide more context than standard Go errors and help in mapping internal issues
 // to appropriate JSON-RPC error responses or handling them specifically within the application.
-package apperrors
-
+// It uses github.com/cockroachdb/errors to ensure stack traces and context propagation.
 // file: internal/apperrors/errors.go
+package apperrors
 
 import (
 	"fmt"
@@ -12,6 +13,7 @@ import (
 )
 
 // ErrorCode defines domain-specific error codes.
+// These codes help in categorizing errors and can be mapped to client-facing error codes (e.g., JSON-RPC).
 type ErrorCode int
 
 // Domain-specific error codes.
@@ -49,6 +51,8 @@ const (
 )
 
 // BaseError is the common base for custom application error types.
+// It includes an error code, a message, an optional causing error (for wrapping),
+// and a map for additional context.
 type BaseError struct {
 	Code    ErrorCode
 	Message string
@@ -57,6 +61,7 @@ type BaseError struct {
 }
 
 // Error implements the standard Go error interface.
+// It formats the error message including the code, custom message, and the causing error if present.
 func (e *BaseError) Error() string {
 	if e.Cause != nil {
 		return fmt.Sprintf("AppError (Code: %d): %s: %v", e.Code, e.Message, e.Cause)
@@ -64,13 +69,15 @@ func (e *BaseError) Error() string {
 	return fmt.Sprintf("AppError (Code: %d): %s", e.Code, e.Message)
 }
 
-// Unwrap returns the underlying error (Cause), enabling errors.Is and errors.As.
+// Unwrap returns the underlying error (Cause), enabling errors.Is and errors.As
+// from the standard library's errors package, and features from cockroachdb/errors.
 func (e *BaseError) Unwrap() error {
 	return e.Cause
 }
 
 // WithContext adds a key-value pair to the error's context map.
 // It initializes the map if necessary and returns the modified error pointer for chaining.
+// This allows attaching structured details to errors.
 func (e *BaseError) WithContext(key string, value interface{}) *BaseError {
 	if e.Context == nil {
 		e.Context = make(map[string]interface{})
@@ -79,8 +86,9 @@ func (e *BaseError) WithContext(key string, value interface{}) *BaseError {
 	return e
 }
 
-// --- Specific Error Type Structs ---.
+// --- Specific Error Type Structs ---
 // These structs represent categories of errors that can occur in the application.
+// They embed BaseError to inherit common error properties and behaviors.
 
 // AuthError represents an authentication or authorization error.
 type AuthError struct{ BaseError }
@@ -109,13 +117,15 @@ type ParseError struct{ BaseError }
 // InvalidRequestError represents an invalid JSON-RPC request structure error, aligning with JSON-RPC.
 type InvalidRequestError struct{ BaseError }
 
-// --- Constructor Functions ---.
+// --- Constructor Functions ---
 // These functions create instances of the specific error types.
+// They ensure that the cause is wrapped with errors.WithStack to capture stack trace information.
 
 // NewAuthError creates a new authentication error.
+// Callers should provide a descriptive message, the original cause (if any), and relevant context.
 func NewAuthError(code ErrorCode, message string, cause error, context map[string]interface{}) error {
 	if code < 1000 || code > 1999 { // Ensure code is within the auth error range
-		code = ErrAuthFailure
+		code = ErrAuthFailure // Default if code is out of auth range
 	}
 	return &AuthError{
 		BaseError: BaseError{Code: code, Message: message, Cause: errors.WithStack(cause), Context: context},
@@ -123,9 +133,10 @@ func NewAuthError(code ErrorCode, message string, cause error, context map[strin
 }
 
 // NewResourceError creates a new resource error.
+// Callers should provide a descriptive message, the original cause (if any), and relevant context.
 func NewResourceError(code ErrorCode, message string, cause error, context map[string]interface{}) error {
 	if code < 3000 || code > 3999 { // Ensure code is within the resource error range
-		code = ErrResourceNotFound
+		code = ErrResourceNotFound // Default if code is out of resource range
 	}
 	return &ResourceError{
 		BaseError: BaseError{Code: code, Message: message, Cause: errors.WithStack(cause), Context: context},
@@ -133,6 +144,7 @@ func NewResourceError(code ErrorCode, message string, cause error, context map[s
 }
 
 // NewProtocolError creates a new API/protocol error.
+// Callers should provide a descriptive message, the original cause (if any), and relevant context.
 func NewProtocolError(code ErrorCode, message string, cause error, context map[string]interface{}) error {
 	// Code should be one of the ErrProtocol... constants or a specific JSON-RPC equivalent if appropriate
 	return &ProtocolError{
@@ -141,6 +153,7 @@ func NewProtocolError(code ErrorCode, message string, cause error, context map[s
 }
 
 // NewInvalidParamsError creates an error for invalid parameters (maps to JSON-RPC -32602).
+// Callers should provide a message detailing the parameter issue, the original cause (if any), and relevant context.
 func NewInvalidParamsError(message string, cause error, context map[string]interface{}) error {
 	return &InvalidParamsError{
 		BaseError: BaseError{Code: ErrInvalidParams, Message: message, Cause: errors.WithStack(cause), Context: context},
@@ -148,6 +161,7 @@ func NewInvalidParamsError(message string, cause error, context map[string]inter
 }
 
 // NewMethodNotFoundError creates an error for method not found (maps to JSON-RPC -32601).
+// Callers should provide a message, the original cause (if any), and relevant context.
 func NewMethodNotFoundError(message string, cause error, context map[string]interface{}) error {
 	return &MethodNotFoundError{
 		BaseError: BaseError{Code: ErrMethodNotFound, Message: message, Cause: errors.WithStack(cause), Context: context},
@@ -155,6 +169,7 @@ func NewMethodNotFoundError(message string, cause error, context map[string]inte
 }
 
 // NewServiceNotFoundError creates an error when a required internal service/component lookup fails.
+// Callers should provide a message, the original cause (if any), and relevant context.
 func NewServiceNotFoundError(message string, cause error, context map[string]interface{}) error {
 	return &ServiceNotFoundError{
 		BaseError: BaseError{Code: ErrServiceNotFound, Message: message, Cause: errors.WithStack(cause), Context: context},
@@ -162,6 +177,7 @@ func NewServiceNotFoundError(message string, cause error, context map[string]int
 }
 
 // NewInternalError creates a generic internal server error (maps to JSON-RPC -32603).
+// Callers should provide a message describing the internal issue, the original cause (if any), and relevant context.
 func NewInternalError(message string, cause error, context map[string]interface{}) error {
 	return &InternalError{
 		BaseError: BaseError{Code: ErrInternalError, Message: message, Cause: errors.WithStack(cause), Context: context},
@@ -169,6 +185,7 @@ func NewInternalError(message string, cause error, context map[string]interface{
 }
 
 // NewParseError creates a JSON parse error (maps to JSON-RPC -32700).
+// Callers should provide a message, the original cause (if any), and relevant context.
 func NewParseError(message string, cause error, context map[string]interface{}) error {
 	return &ParseError{
 		BaseError: BaseError{Code: ErrParseError, Message: message, Cause: errors.WithStack(cause), Context: context},
@@ -176,18 +193,20 @@ func NewParseError(message string, cause error, context map[string]interface{}) 
 }
 
 // NewInvalidRequestError creates an invalid request structure error (maps to JSON-RPC -32600).
+// Callers should provide a message, the original cause (if any), and relevant context.
 func NewInvalidRequestError(message string, cause error, context map[string]interface{}) error {
 	return &InvalidRequestError{
 		BaseError: BaseError{Code: ErrInvalidRequest, Message: message, Cause: errors.WithStack(cause), Context: context},
 	}
 }
 
-// --- JSON-RPC Error Mapping ---.
+// --- JSON-RPC Error Mapping ---
 
 // MapAppErrorToJSONRPC translates an application error (or any error) into JSON-RPC components
 // (code, message, data) suitable for a JSON-RPC error response.
+// It attempts to extract code and context from BaseError types, and provides defaults for other errors.
 func MapAppErrorToJSONRPC(err error) (code int, message string, data map[string]interface{}) {
-	data = make(map[string]interface{})
+	data = make(map[string]interface{}) // Initialize data map
 	var baseErr *BaseError
 
 	if !errors.As(err, &baseErr) {
@@ -196,6 +215,11 @@ func MapAppErrorToJSONRPC(err error) (code int, message string, data map[string]
 		message = "An internal server error occurred."
 		data["goErrorType"] = fmt.Sprintf("%T", err) // Include Go type of original error for debugging
 		data["detail"] = err.Error()                 // Include original error message in data.
+		// For non-BaseError types, we might not have a specific context map to expose.
+		// If err is from cockroachdb/errors, some properties might be extractable, but this is a simple fallback.
+		if len(data) == 0 { // Clean up if no specific data was added
+			data = nil
+		}
 		return code, message, data
 	}
 

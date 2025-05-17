@@ -17,6 +17,10 @@ import (
 	"github.com/dkoosis/hello-tool-base/internal/logging"
 )
 
+var (
+	log logging.Logger // Declare log variable
+)
+
 // TestMain is executed before any other tests in this package.
 func TestMain(m *testing.M) {
 	logging.SetupDefaultLogger("error")
