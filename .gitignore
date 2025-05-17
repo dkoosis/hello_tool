@@ -12,6 +12,7 @@
 *.out
 coverage.out
 coverage.html
+*.checksum
 
 # Dependency directories (Go modules handle this, so usually not needed)
 # vendor/

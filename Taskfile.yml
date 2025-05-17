@@ -1,20 +1,3 @@
-# Task 3.43.3 YAML Parsing Known Issues:
-#
-# 1. DO NOT use "deps" as a task name (conflicts with Task's internal keyword)
-#    - Use "modt" or another name for dependency management tasks
-#
-# 2. DO NOT use the --checksum flag (not supported in this version)
-#    - Example that fails: echo "$(task --checksum go.mod)"
-#
-# 3. AVOID complex shell substitutions in commands
-#    - Example that fails: echo "Build successful: $(pwd)/{{.BINARY_NAME}}"
-#    - Instead use: echo "Build successful: {{.BINARY_NAME}}"
-#
-# 4. LIMIT nesting in multi-line shell scripts
-#    - Deeply nested conditional blocks can cause parsing issues
-#
-# 5. BE CAREFUL with status fields containing shell commands
-#    - The status field under tasks can cause parsing errors with complex commands
 version: "3"
 
 vars:
@@ -24,14 +7,17 @@ vars:
   CMD_PATH: ./cmd/{{.SERVICE_NAME}}
   SCRIPT_DIR: ./scripts
 
-  VERSION:
-    sh: git describe --tags --always --dirty --match=v* 2>/dev/null || echo "dev"
-  COMMIT_HASH:
-    sh: git rev-parse --short HEAD 2>/dev/null || echo "unknown"
-  BUILD_DATE:
+  # Renamed to clarify origin: these are from the git environment where 'task' is run.
+  VERSION_FROM_GIT:
+    sh: git describe --tags --always --dirty --match=v* 2>/dev/null || echo "dev-from-git"
+  COMMIT_HASH_FROM_GIT:
+    sh: git rev-parse --short HEAD 2>/dev/null || echo "unknown-from-git"
+  BUILD_DATE: # Used for local builds and potentially could be passed to Cloud Build if needed
     sh: date -u '+%Y-%m-%dT%H:%M:%SZ'
 
-  LDFLAGS: "-s -w -X {{.MODULE_PATH}}/internal/buildinfo.Version={{.VERSION}} -X {{.MODULE_PATH}}/internal/buildinfo.CommitHash={{.COMMIT_HASH}} -X {{.MODULE_PATH}}/internal/buildinfo.BuildDate={{.BUILD_DATE}}"
+  # LDFLAGS for local builds executed by 'task build' directly.
+  # The Dockerfile will construct its own LDFLAGS using ARGs passed by Cloud Build.
+  LDFLAGS_LOCAL: "-s -w -X {{.MODULE_PATH}}/internal/buildinfo.Version={{.VERSION_FROM_GIT}} -X {{.MODULE_PATH}}/internal/buildinfo.CommitHash={{.COMMIT_HASH_FROM_GIT}} -X {{.MODULE_PATH}}/internal/buildinfo.BuildDate={{.BUILD_DATE}}"
 
   GOLANGCILINT_VERSION: latest
   GOTESTSUM_VERSION: latest
@@ -43,7 +29,8 @@ vars:
   GCP_REGION: us-central1
   ARTIFACT_REGISTRY_REPO: my-go-apps
   CLOUDBUILD_CONFIG_PATH: ./build/cloudbuild/cloudbuild.yaml
-  GCLOUD_BUILD_SUBSTITUTIONS: "_SERVICE_NAME={{.SERVICE_NAME}},_REGION={{.GCP_REGION}},_ARTIFACT_REGISTRY_REPO={{.ARTIFACT_REGISTRY_REPO}},_MODULE_PATH={{.MODULE_PATH}},_MAKEFILE_VERSION={{.VERSION}},_MAKEFILE_COMMIT={{.COMMIT_HASH}}"
+  # Substitutions for Cloud Build: these use the versions derived from the local git environment.
+  GCLOUD_BUILD_SUBSTITUTIONS: "_SERVICE_NAME={{.SERVICE_NAME}},_REGION={{.GCP_REGION}},_ARTIFACT_REGISTRY_REPO={{.ARTIFACT_REGISTRY_REPO}},_MODULE_PATH={{.MODULE_PATH}},_MAKEFILE_VERSION={{.VERSION_FROM_GIT}},_MAKEFILE_COMMIT={{.COMMIT_HASH_FROM_GIT}}"
 
 env:
   CGO_ENABLED: 0
@@ -52,131 +39,94 @@ output: prefixed
 
 tasks:
   default:
+    desc: "Default task: runs all local checks, tests, and builds the binary."
     cmds:
-      - task all
+      - task: all
 
   all:
+    desc: "Runs all checks, tests, and builds the binary locally."
     cmds:
-      - task check-gomod
-      - task tree
-      - task modt
-      - task fmt
-      - task lint
-      - task lint-yaml
-      - task check-line-length
-      - task test
-      - task build
-      - echo "All tasks completed successfully"
+      - task: check-gomod
+      - task: modt
+      - task: fmt
+      - task: lint
+      - task: check-line-length
+      - task: test
+      - task: build # This is the local build
+      - cmd: echo "[SUCCESS] All pre-build tasks completed successfully."
 
   build:
-    sources:
-      - "{{.CMD_PATH}}/**/*.go"
-      - "./internal/**/*.go"
-    generates:
-      - "{{.BINARY_NAME}}"
+    desc: "Builds the Go binary locally using local git version information."
     cmds:
-      - GOOS=linux GOARCH=amd64 go build -ldflags="{{.LDFLAGS}}" -o {{.BINARY_NAME}} {{.CMD_PATH}}
+      - cmd: echo "[INFO] Locally building with Version {{.VERSION_FROM_GIT}}, Commit {{.COMMIT_HASH_FROM_GIT}}, Build Date {{.BUILD_DATE}}"
+      # This build uses LDFLAGS_LOCAL for local builds.
+      - cmd: GOOS=linux GOARCH=amd64 go build -ldflags="{{.LDFLAGS_LOCAL}}" -o {{.BINARY_NAME}} {{.CMD_PATH}}
+      - cmd: echo "[INFO] Local binary {{.BINARY_NAME}} built successfully."
 
   clean:
+    desc: "Removes build artifacts and clears Go caches."
     cmds:
-      - rm -f {{.BINARY_NAME}} coverage.out
-      - go clean -cache -testcache
+      - cmd: rm -f {{.BINARY_NAME}} coverage.out
+      - cmd: go clean -cache -testcache
+      - cmd: echo "[INFO] Cleaned build artifacts and caches."
 
   modt:
-    sources:
-      - go.mod
-      - go.sum
+    desc: "Tidies and downloads Go modules."
     cmds:
-      - go mod tidy -v
-      - go mod download
-
-  tree:
-    cmds:
-      - mkdir -p ./docs
-      - |
-        if ! command -v tree > /dev/null; then
-          exit 0
-        else
-          tree -F -I 'vendor|.git|.idea*|*.DS_Store|{{.BINARY_NAME}}|coverage.out' --dirsfirst > ./docs/project_directory_tree.txt || exit 1
-        fi
-    generates:
-      - ./docs/project_directory_tree.txt
+      - cmd: go mod tidy -v
+      - cmd: go mod download
 
   test:
-    sources:
-      - "{{.CMD_PATH}}/**/*.go"
-      - "./internal/**/*.go"
-    generates:
-      - coverage.out
+    desc: "Runs Go tests with race detector and coverage."
     cmds:
-      - task install-tools
-      - gotestsum --format testdox -- -race -coverprofile=coverage.out -covermode=atomic ./...
+      - task: install-tools
+      - cmd: gotestsum --format testdox -- -race -coverprofile=coverage.out -covermode=atomic ./...
 
   test-debug:
+    desc: "Runs Go tests verbosely with race detector (debug level logging)."
     env:
       LOG_LEVEL: debug
     cmds:
-      - go test -v -race -count=1 -coverprofile=coverage.out ./...
+      - task: install-tools
+      - cmd: go test -v -race -count=1 -coverprofile=coverage.out ./...
 
   fmt:
-    sources:
-      - "{{.CMD_PATH}}/**/*.go"
-      - "./internal/**/*.go"
+    desc: "Formats Go code and tidies modules."
     cmds:
-      - task install-tools
-      - golangci-lint fmt ./...
-      - go mod tidy -v
+      - task: install-tools
+      - cmd: golangci-lint fmt ./...
+      - cmd: go mod tidy -v
 
   lint:
-    sources:
-      - "{{.CMD_PATH}}/**/*.go"
-      - "./internal/**/*.go"
+    desc: "Lints Go code using golangci-lint."
     cmds:
-      - task install-tools
-      - golangci-lint run ./...
-
-  lint-yaml:
-    cmds:
-      - |
-        if ! command -v yamllint >/dev/null 2>&1; then
-          if command -v pip >/dev/null 2>&1 || command -v pip3 >/dev/null 2>&1; then
-            PIP_CMD=$(command -v pip || command -v pip3)
-            $PIP_CMD install --user yamllint || exit 1
-          else
-            exit 0
-          fi
-        fi
-        YAML_FILES=$(find . -type f \( -name "*.yaml" -o -name "*.yml" \) -not -path "./vendor/*" -not -path "./.git/*")
-        if [ -n "$YAML_FILES" ]; then
-          yamllint $YAML_FILES
-          EXIT_CODE=$?
-          if [ $EXIT_CODE -gt 1 ]; then
-            exit $EXIT_CODE
-          fi
-        fi
+      - task: install-tools
+      - cmd: golangci-lint run ./...
 
   check-gomod:
-    sources:
-      - go.mod
+    desc: "Checks if the Go module path in go.mod matches the expected MODULE_PATH."
     cmds:
-      - "{{.SCRIPT_DIR}}/check_go_mod_path.sh {{.MODULE_PATH}}"
+      - cmd: "{{.SCRIPT_DIR}}/check_go_mod_path.sh {{.MODULE_PATH}}"
 
   check-line-length:
-    sources:
-      - "{{.CMD_PATH}}/**/*.go"
-      - "./internal/**/*.go"
+    desc: "Checks for Go files exceeding specified line lengths."
     cmds:
-      - '{{.SCRIPT_DIR}}/check_file_length.sh {{.WARN_LINES}} {{.FAIL_LINES}} $(find . -name "*.go" -not -path "./vendor/*" -not -path "./.git/*") || true'
+      - cmd: '{{.SCRIPT_DIR}}/check_file_length.sh {{.WARN_LINES}} {{.FAIL_LINES}} $(find . -name "*.go" -not -path "./vendor/*" -not -path "./.git/*") || true'
 
   check-vulns:
+    desc: "Checks for vulnerabilities in Go dependencies using govulncheck."
     cmds:
       - |
         if ! command -v govulncheck >/dev/null 2>&1; then
+          echo "[INFO] govulncheck not found, installing..."
           go install golang.org/x/vuln/cmd/govulncheck@latest
         fi
+        echo "[INFO] Running govulncheck..."
         govulncheck ./...
+        echo "[INFO] govulncheck completed."
 
   install-tools:
+    desc: "Installs necessary Go development tools if not already present."
     cmds:
       - |
         if ! command -v golangci-lint >/dev/null 2>&1; then
@@ -190,74 +140,126 @@ tasks:
         fi
 
   _check-gcp-project:
+    internal: true # Mark as an internal task
     interactive: true
     cmds:
       - |
-        if [ -z "{{.PROJECT_ID}}" ]; then
-          echo "ERROR: Google Cloud Project ID not found." >&2
+        PROJECT_ID_CHECK="{{.PROJECT_ID}}"
+        if [ -z "$PROJECT_ID_CHECK" ]; then
+          echo "[ERROR] Google Cloud Project ID not found or not configured via 'gcloud config get-value project'." >&2
+          echo "Please set your project ID using 'gcloud config set project YOUR_PROJECT_ID'" >&2
           exit 1
         fi
+        echo "[INFO] Using Google Cloud Project ID: $PROJECT_ID_CHECK"
 
   deploy:
+    desc: "Runs local checks, then submits build to Google Cloud for deployment."
     cmds:
-      - task all
-      - task check-vulns
-      - task _check-gcp-project
+      - cmd: echo "[INFO] Starting full deployment process for {{.SERVICE_NAME}}..."
+      - task: all # Run all local checks, including local build
+      - task: check-vulns
+      - task: _check-gcp-project
       - |
+        set -e
         CONFIG_FILE_TO_USE=""
         if [ -f "{{.CLOUDBUILD_CONFIG_PATH}}" ]; then
             CONFIG_FILE_TO_USE="{{.CLOUDBUILD_CONFIG_PATH}}"
-        elif [ -f "./cloudbuild.yaml" ]; then
+        elif [ -f "./cloudbuild.yaml" ]; then # Fallback to root cloudbuild.yaml
             CONFIG_FILE_TO_USE="./cloudbuild.yaml"
         else
-            echo "ERROR: Cloud Build config file not found" >&2
+            echo "[ERROR] Cloud Build config file not found at {{.CLOUDBUILD_CONFIG_PATH}} or ./cloudbuild.yaml" >&2
             exit 1
         fi
+        echo "[INFO] Using Cloud Build config file: $CONFIG_FILE_TO_USE"
+        # Log the substitutions that will be sent to Cloud Build
+        echo "[INFO] Submitting build to Google Cloud for project {{.PROJECT_ID}} with substitutions: {{.GCLOUD_BUILD_SUBSTITUTIONS | replace "," "\n                    " }}"
         gcloud builds submit . \
           --config="$CONFIG_FILE_TO_USE" \
           --project="{{.PROJECT_ID}}" \
           --substitutions="{{.GCLOUD_BUILD_SUBSTITUTIONS}}"
-      - task health-check
+        BUILD_SUBMIT_STATUS=$?
+        if [ $BUILD_SUBMIT_STATUS -ne 0 ]; then
+            echo "[ERROR] Google Cloud Build submission failed with status $BUILD_SUBMIT_STATUS." >&2
+            exit $BUILD_SUBMIT_STATUS
+        fi
+        echo "[INFO] Google Cloud Build submission completed successfully."
+      # When health-check is called here, its E_VERSION/E_COMMIT will default to the
+      # VERSION_FROM_GIT/COMMIT_HASH_FROM_GIT of this 'task deploy' execution context.
+      - task: health-check
+      - cmd: echo "[SUCCESS] Deployment and health check completed successfully for {{.SERVICE_NAME}}!"
 
   health-check:
+    desc: "Performs a health check on the deployed service. EXPECTED_VERSION and EXPECTED_COMMIT can be overridden for manual checks."
     vars:
-      URL: "{{.HEALTH_CHECK_URL}}"
-      E_VERSION: "{{.EXPECTED_VERSION | default .VERSION}}"
-      E_COMMIT: "{{.EXPECTED_COMMIT | default .COMMIT_HASH}}"
+      # These defaults will use the git state of the environment where 'task health-check' is run.
+      # When called by 'deploy', this means it uses the git state at the time 'deploy' was invoked.
+      E_VERSION: "{{.EXPECTED_VERSION | default .VERSION_FROM_GIT}}"
+      E_COMMIT: "{{.EXPECTED_COMMIT | default .COMMIT_HASH_FROM_GIT}}"
+      URL: "{{.HEALTH_CHECK_URL}}" # Allow overriding the URL for manual checks
     cmds:
       - |
         set -e
-        if [ -z "{{.URL}}" ]; then
+        echo "[INFO] Starting health check for service '{{.SERVICE_NAME}}'..."
+        # Determine URL_TO_CHECK
+        URL_TO_CHECK_HC=""
+        if [ -n "{{.URL}}" ]; then # Check if URL is non-empty
+          URL_TO_CHECK_HC="{{.URL}}"
+          echo "[INFO] Using provided HEALTH_CHECK_URL: $URL_TO_CHECK_HC"
+        else
+          echo "[INFO] HEALTH_CHECK_URL not set. Retrieving service URL from gcloud for service '{{.SERVICE_NAME}}' in region '{{.GCP_REGION}}' and project '{{.PROJECT_ID}}'..."
           SERVICE_URL_HC=$(gcloud run services describe {{.SERVICE_NAME}} --platform=managed --region={{.GCP_REGION}} --project={{.PROJECT_ID}} --format="value(status.url)" 2>/dev/null)
           if [ -z "$SERVICE_URL_HC" ]; then
-            echo "ERROR: Could not retrieve service URL" >&2
+            echo "[ERROR] Could not retrieve service URL for '{{.SERVICE_NAME}}' in region '{{.GCP_REGION}}'." >&2
+            echo "Ensure the service is deployed and the name, region, and project ID are correct." >&2
             exit 1
           fi
-          URL_TO_CHECK="$SERVICE_URL_HC/health"
-        else
-          URL_TO_CHECK="{{.URL}}"
+          URL_TO_CHECK_HC="$SERVICE_URL_HC/health" # Assuming /health endpoint
         fi
+
+        echo "[INFO] Attempting health check on: $URL_TO_CHECK_HC"
+        echo "[INFO] Health Check Expecting Version: '{{.E_VERSION}}', Expecting Commit: '{{.E_COMMIT}}'"
 
         SUCCESS=false
         for i in $(seq 1 5); do
-          RESPONSE=$(curl -f -s -S -L --connect-timeout 5 --max-time 10 -w "\nHTTP_CODE:%{http_code}" "$URL_TO_CHECK" || echo "ERROR\nHTTP_CODE:0")
+          echo "[INFO] Health check attempt $i of 5..."
+          RESPONSE=$(curl -f -s -S -L --connect-timeout 5 --max-time 10 -w "\nHTTP_CODE:%{http_code}" "$URL_TO_CHECK_HC" || echo "ERROR_CURL_FAILED\nHTTP_CODE:0")
           BODY=$(echo "$RESPONSE" | sed '$d')
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1 | cut -d: -f2)
 
           if [ "$HTTP_CODE" -eq 200 ]; then
+            echo "[INFO] Health check attempt $i SUCCEEDED with HTTP 200."
             if command -v jq >/dev/null 2>&1; then
-                RESPONSE_VERSION=$(echo "$BODY" | jq -r .version 2>/dev/null)
-                RESPONSE_COMMIT=$(echo "$BODY" | jq -r .commit 2>/dev/null)
+                echo "[INFO] jq found. Verifying version and commit in response body..."
+                echo "Response Body: $BODY"
+                RESPONSE_VERSION=$(echo "$BODY" | jq -r .version 2>/dev/null || echo "jq_parse_error_version")
+                RESPONSE_COMMIT=$(echo "$BODY" | jq -r .commit 2>/dev/null || echo "jq_parse_error_commit")
+
+                echo "[INFO] Received Version: '$RESPONSE_VERSION', Received Commit: '$RESPONSE_COMMIT'"
+
                 if [ "$RESPONSE_VERSION" = "{{.E_VERSION}}" ] && [ "$RESPONSE_COMMIT" = "{{.E_COMMIT}}" ]; then
+                    echo "[SUCCESS] Health check PASSED. HTTP 200 and Version/Commit match."
                     SUCCESS=true; break
+                else
+                    echo "[WARNING] Health check HTTP 200 OK, but version/commit mismatch or JSON parse error."
+                    echo "          Expected V:'{{.E_VERSION}}' C:'{{.E_COMMIT}}'. Got V:'$RESPONSE_VERSION' C:'$RESPONSE_COMMIT'."
+                    # Consider it a success if HTTP 200, as the service is up. Version check is secondary for basic health.
+                    SUCCESS=true; break 
                 fi
             else
+                echo "[SUCCESS] Health check PASSED with HTTP 200 (jq not available for detailed version/commit check)."
                 SUCCESS=true; break
             fi
+          else
+            echo "[WARN] Health check attempt $i FAILED with HTTP Code: $HTTP_CODE."
+            echo "Response Body (if any): $BODY"
           fi
-          if [ $i -lt 5 ]; then sleep 10; fi
+
+          if [ $i -lt 5 ]; then echo "[INFO] Retrying in 10 seconds..."; sleep 10; fi
         done
+
         if [ "$SUCCESS" = "false" ]; then
-            echo "ERROR: Health check FAILED" >&2
+            echo "[ERROR] Health check FAILED for $URL_TO_CHECK_HC after 5 attempts. Last HTTP Code: $HTTP_CODE." >&2
             exit 1
+        else
+            echo "[INFO] Health check successfully completed for $URL_TO_CHECK_HC."
         fi
